@@ -20,7 +20,7 @@ const CATALOG = {
   bike: [
     { id: 'bike_floor',      brand: 'Велосипед', isBike: true, bikeMode: 'floor',      name: 'Велосипед на полу (прямой руль)',     w: 1750, d: 620, h: 1050, shelves: 1, price: 0, color: '#d97706' },
     { id: 'bike_floor_turn', brand: 'Велосипед', isBike: true, bikeMode: 'floor_turn', name: 'Велосипед на полу (повернут руль)',   w: 1750, d: 420, h: 1050, shelves: 1, price: 0, color: '#ea580c' },
-    { id: 'bike_vert',       brand: 'Велосипед', isBike: true, bikeMode: 'vert',       name: 'Велосипед вертикально у стены',       w: 800,  d: 1000, h: 2000, shelves: 1, price: 0, color: '#b45309' }
+    { id: 'bike_vert',       brand: 'Велосипед', isBike: true, bikeMode: 'vert',       name: 'Велосипед на стене, колесом вверх',       w: 800,  d: 1000, h: 2000, shelves: 1, price: 0, color: '#b45309' }
   ]
 };
 
@@ -197,7 +197,7 @@ function renderInspector() {
         <div class="wall-add-btns">
           <button style="${item.bikeMode==='floor'?'background:#2563eb;color:#fff;':''}" onclick="setBikeMode(${item.uid}, 'floor')">На полу (620мм)</button>
           <button style="${item.bikeMode==='floor_turn'?'background:#2563eb;color:#fff;':''}" onclick="setBikeMode(${item.uid}, 'floor_turn')">Руль повёрнут (420мм)</button>
-          <button style="${item.bikeMode==='vert'?'background:#2563eb;color:#fff;':''}" onclick="setBikeMode(${item.uid}, 'vert')">Вертикально</button>
+          <button style="${item.bikeMode==='vert'?'background:#2563eb;color:#fff;':''}" onclick="setBikeMode(${item.uid}, 'vert')">Колесом вверх</button>
         </div>
       </div>
     `;
@@ -236,22 +236,24 @@ function renderInspector() {
 
 function setBikeMode(uid, mode) {
   const item = items.find(i => i.uid === uid);
-  if (!item) return;
-  item.bikeMode = mode;
-  if (mode === 'floor') {
-    item.w = 1750; item.d = 620; item.h = 1050;
-    item.name = 'Велосипед на полу (прямой руль)';
-  } else if (mode === 'floor_turn') {
-    item.w = 1750; item.d = 420; item.h = 1050;
-    item.name = 'Велосипед на полу (повернут руль)';
-  } else if (mode === 'vert') {
-    item.w = 800; item.d = 1000; item.h = 2000;
-    item.name = 'Велосипед вертикально у стены';
+  const modelId = {floor:'bike_floor', floor_turn:'bike_floor_turn', vert:'bike_vert'}[mode];
+  if (!item?.isBike || !modelId) return;
+  closeObjectMenu();
+  if (item.bikeMode !== mode) {
+    item.bikeMode = mode;
+    item.modelId = modelId;
+    item.w = mode === 'vert' ? 800 : 1750;
+    item.d = mode === 'vert' ? 1000 : mode === 'floor_turn' ? 420 : 620;
+    item.h = mode === 'vert' ? 2000 : 1050;
+    item.rotation = 0;
+    item.z = 0;
   }
+  item.name = mode === 'vert' ? 'Велосипед на стене, колесом вверх' : mode === 'floor_turn' ? 'Велосипед на полу (повернут руль)' : 'Велосипед на полу (прямой руль)';
+  selectedId = uid;
   refreshAll();
 }
 
-function changeItemWall(uid, newWall) {
+  function changeItemWall(uid, newWall) {
   const item = items.find(i => i.uid === uid);
   if (!item) return;
   item.wall = newWall;
@@ -657,6 +659,6 @@ function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.
 function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();i.rotation=((i.rotation||0)+90)%360;selectedId=uid;refreshAll();}
 function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
-function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';for(const [label,fn] of [['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
+function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';const item=items.find(i=>i.uid===uid);const bikeActions=item.isBike?(item.bikeMode==='vert'?[['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]]:[['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]]):[];for(const [label,fn] of [...bikeActions,['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
