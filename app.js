@@ -57,8 +57,8 @@ function findCatalogModel(modelId) {
 
 // Вычисление мировых 2D координат прямоугольника объекта (x, y, width, height)
 function getItemRect(item) {
-  const w = item.w; // вдоль стены
-  const d = item.d; const gap = item.gap || 0; // wall clearance
+  const w = placedSize(item).w; // rotated footprint along wall
+  const d = placedSize(item).d; const gap = item.gap || 0; // wall clearance
   if (item.wall === 'top') {
     return { x: item.offset, y: gap, width: w, height: d };
   } else if (item.wall === 'left') {
@@ -187,7 +187,7 @@ function renderInspector() {
   badge.className = 'badge ' + (item.isBike ? 'badge-bike' : (item.brand === 'SE 750кг' ? 'badge-se' : 'badge-lm'));
 
   const wallMax = WALL_INFO[item.wall].maxLen;
-  const maxOff = Math.max(0, wallMax - item.w);
+  const maxOff = Math.max(0, wallMax - placedSize(item).w);
 
   let bikeControls = '';
   if (item.isBike) {
@@ -205,6 +205,8 @@ function renderInspector() {
 
   box.innerHTML = `
     <div style="font-weight:700; color:var(--text); margin-bottom:6px;">${item.name}</div>
+    <div class="wall-add-btns" style="margin-bottom:8px"><button onclick="rotateItem(${item.uid})">↻ Повернуть 90°</button><button onclick="duplicateItem(${item.uid})">＋ Копия</button></div>
+    <div class="note">Поворот: ${item.rotation||0}°. На плане: ${placedSize(item).w} × ${placedSize(item).d} мм вдоль / от стены.</div>
     ${bikeControls}
     <div class="note">Размеры вдоль стены × глубина × высота, мм</div>
     ${['w','d','h','gap','z'].map((k,j)=>`<label class="inspector-row">${['Ширина вдоль стены','Глубина','Высота','Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="${k==='gap'||k==='z'?0:1}" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
@@ -278,7 +280,7 @@ function snapItemToNeighbor(uid) {
     }
   } else {
     const last = sameWall[sameWall.length - 1];
-    item.offset = last.offset + last.w;
+    item.offset = last.offset + placedSize(last).w;
   }
   refreshAll();
 }
@@ -418,6 +420,7 @@ function render2D() {
   // Навешиваем обработчики перетаскивания на объекты
   svg.querySelectorAll('.draggable').forEach(el => {
     el.addEventListener('pointerdown', onSvgPointerDown);
+    el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();openObjectMenu(Number(el.dataset.uid),e.clientX,e.clientY);});
   });
 }
 
@@ -430,6 +433,8 @@ function getSvgPoint(evt) {
 }
 
 function onSvgPointerDown(evt) {
+  if(evt.button!==0)return;
+  closeObjectMenu();
   evt.stopPropagation();
   const uid = parseInt(evt.currentTarget.getAttribute('data-uid'), 10);
   selectedId = uid;
@@ -465,21 +470,21 @@ function onSvgPointerMove(evt) {
   const minDist = Math.min(distTop, distLeft, distRightTop, distRightBot);
   if (minDist === distTop) {
     item.wall = 'top';
-    item.offset = Math.round((pt.x - item.w / 2) / 10) * 10;
+    item.offset = Math.round((pt.x - placedSize(item).w / 2) / 10) * 10;
   } else if (minDist === distLeft) {
     item.wall = 'left';
-    item.offset = Math.round((pt.y - item.w / 2) / 10) * 10;
+    item.offset = Math.round((pt.y - placedSize(item).w / 2) / 10) * 10;
   } else if (minDist === distRightTop) {
     item.wall = 'right_top';
-    item.offset = Math.round((pt.y - item.w / 2) / 10) * 10;
+    item.offset = Math.round((pt.y - placedSize(item).w / 2) / 10) * 10;
   } else {
     item.wall = 'right_bot';
-    item.offset = Math.round((pt.y - 1394 - item.w / 2) / 10) * 10;
+    item.offset = Math.round((pt.y - 1394 - placedSize(item).w / 2) / 10) * 10;
   }
 
   // Ограничиваем в разумных пределах стены
   const maxLen = WALL_INFO[item.wall].maxLen;
-  item.offset = Math.max(-200, Math.min(maxLen - item.w + 200, item.offset));
+  item.offset = Math.max(-200, Math.min(maxLen - placedSize(item).w + 200, item.offset));
 
   renderInspector();
   render2D();
@@ -632,11 +637,11 @@ function updateAnalysis(){
  const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';
 }
 function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));refreshAll();}
-function snapshot(){return {version:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode}))};}
+function snapshot(){return {version:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
- const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;return i;});
+ const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;return i;});
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');items=parsed;ceilingHeight=h;nextUid=items.length+1;selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
 function restorePlan(){try{if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
@@ -647,3 +652,11 @@ async function sharePlan(){const url=location.origin+location.pathname+'#plan='+
 function exportSvg(){const clone=document.getElementById('plan2d').cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');download('kladovka-plan.svg',new XMLSerializer().serializeToString(clone),'image/svg+xml');}
 function toast(message){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.role='status';el.textContent=message;document.body.append(el);setTimeout(()=>el.remove(),5000);}
 document.addEventListener('keydown',e=>{if((e.key==='Delete'||e.key==='Backspace')&&selectedId!=null&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&!document.getElementById('bomModal').classList.contains('open')){e.preventDefault();deleteItem(selectedId);}if(e.key==='Escape')closeBomModal();});
+
+function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.d};}
+function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();i.rotation=((i.rotation||0)+90)%360;selectedId=uid;refreshAll();}
+function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
+function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
+function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';for(const [label,fn] of [['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
+window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);

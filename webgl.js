@@ -11,7 +11,7 @@ try {
  function clear(){contents.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.dispose();}}});scene.remove(contents);contents=new THREE.Group();scene.add(contents);selectable.length=0;}
  function label(text,x,y,z){const c=document.createElement('canvas');c.width=512;c.height=100;const g=c.getContext('2d');g.fillStyle='rgba(255,255,255,.94)';g.fillRect(0,0,512,100);g.fillStyle='#19334d';g.font='bold 32px sans-serif';g.textAlign='center';g.fillText(text,256,62);const tex=new THREE.CanvasTexture(c),sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false}));sp.position.set(x,y,z);sp.scale.set(640,125,1);contents.add(sp);}
  function beam(a,b,color,r=16){const vec=new THREE.Vector3().subVectors(b,a),m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,vec.length(),8),new THREE.MeshStandardMaterial({color}));m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),vec.normalize());contents.add(m);}
- function bike(item,r){const x=r.x+r.width/2,z=r.y+r.height/2,base=item.z||0;const group=new THREE.Group();contents.add(group);const vertical=item.bikeMode==='vert',h=item.h;const alongSide=item.wall!=='top';
+ function bike(item,r){const x=r.x+r.width/2,z=r.y+r.height/2,base=item.z||0;const group=new THREE.Group();contents.add(group);const vertical=item.bikeMode==='vert',h=item.h;const alongSide=(item.wall!=='top')!==((item.rotation||0)%180===90);
   const wheelR=vertical?Math.min(330,h/5):Math.min(330,h*.31),span=vertical?h-2*wheelR:item.w-2*wheelR;
   const pts=vertical?[new THREE.Vector3(x,base+wheelR,z),new THREE.Vector3(x,base+wheelR+span,z)]:[new THREE.Vector3(x,base+wheelR,z-span/2),new THREE.Vector3(x,base+wheelR,z+span/2)];
   if(!vertical&&!alongSide){pts[0].set(x-span/2,base+wheelR,z);pts[1].set(x+span/2,base+wheelR,z);}
@@ -27,7 +27,7 @@ try {
   for(const item of items){const r=getItemRect(item),base=item.z||0,color=item.uid===selectedId?0xdc2626:item.color,cx=r.x+r.width/2,cz=r.y+r.height/2;
    const envelope=box(r.width,item.h,r.height,cx,base+item.h/2,cz,color,(item.isBike||item.isSki)?0.12:0.035);envelope.userData.uid=item.uid;selectable.push(envelope);
    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(envelope.geometry),new THREE.LineBasicMaterial({color,transparent:true,opacity:.65}));edges.position.copy(envelope.position);contents.add(edges);
-   if(item.isBike)bike(item,r);else if(item.isSki){const side=item.wall!=='top';for(const k of [-1,1])box(side?30:55,item.h,side?55:30,cx+(side?0:k*45),base+item.h/2,cz+(side?k*45:0),color);}
+   if(item.isBike)bike(item,r);else if(item.isSki){const side=(item.wall!=='top')!==((item.rotation||0)%180===90);for(const k of [-1,1])box(side?30:55,item.h,side?55:30,cx+(side?0:k*45),base+item.h/2,cz+(side?k*45:0),color);}
    else {for(const xx of [r.x+15,r.x+r.width-15])for(const zz of [r.y+15,r.y+r.height-15])box(30,item.h,30,xx,base+item.h/2,zz,0x657991);const n=Math.max(2,item.shelves||5);for(let i=0;i<n;i++){const y=base+Math.min(150,item.h*.1)+i*(item.h-Math.min(300,item.h*.2))/(n-1);box(r.width,25,r.height,cx,y,cz,0xc4d1df);}}
    label(`#${item.uid} ${item.w}×${item.d} · H${item.h}`,cx,base+item.h+90,cz);
   }label('1468 мм',734,30,-160);label('1779 мм · ВХОД',889,30,3020);label(`Потолок ${H} · труба 3221 (трасса неизвестна)`,850,H+170,1400);status.textContent='WebGL · габариты из 2D; форма велосипеда условная';resize();
@@ -35,6 +35,9 @@ try {
  function resize(){const rect=canvas.parentElement.getBoundingClientRect();if(rect.width<1||rect.height<1)return;renderer.setSize(rect.width,rect.height,false);camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix();}
  new ResizeObserver(resize).observe(canvas.parentElement);window.addEventListener('resize',resize);
  const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();let down=null;
+ function hitAt(e){const r=canvas.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);return raycaster.intersectObjects(selectable)[0];}
+ canvas.addEventListener('contextmenu',e=>{e.preventDefault();const hit=hitAt(e);if(hit)window.openObjectMenu(hit.object.userData.uid,e.clientX,e.clientY);});
+ canvas.addEventListener('pointermove',e=>{if(down&&Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)window.closeObjectMenu?.();});
  canvas.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);canvas.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const r=canvas.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);const hit=raycaster.intersectObjects(selectable)[0];if(hit)window.selectPlannerItem(hit.object.userData.uid);});
  function frame(){requestAnimationFrame(frame);controls.update();renderer.render(scene,camera);}frame();window.renderWebGL();
 } catch(e){status.textContent='WebGL недоступен: '+e.message+'. План 2D продолжает работать.';console.error(e);}
