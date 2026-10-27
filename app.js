@@ -28,6 +28,7 @@ CATALOG.ski = [
  {id:'ski_alpine',brand:'Лыжи',name:'Горные лыжи · вертикальный подвес',isSki:true,w:250,d:220,h:1800,z:150,shelves:0,price:0,color:'#7c3aed'},
  {id:'ski_nordic',brand:'Лыжи',name:'Беговые лыжи · вертикальный подвес',isSki:true,w:180,d:160,h:2100,z:150,shelves:0,price:0,color:'#a21caf'}
 ];
+CATALOG.ladder = [{id:'ladder_folded',brand:'Стремянка',name:'Стремянка сложенная',isLadder:true,w:500,d:120,h:1800,shelves:0,price:0,color:'#0891b2'}];
 // Геометрия стен:
 // left: x=0, y in [0..2860]
 // top: y=0, x in [0..1468]
@@ -90,7 +91,7 @@ function addItem(modelId, wall = 'left', offset = 0) {
     color: m.color,
     isBike: !!m.isBike,
     bikeMode: m.bikeMode || null,
-    isSki: !!m.isSki, z: m.z || 0, gap: 20,
+    isLadder: !!m.isLadder, isSki: !!m.isSki, z: m.z || 0, gap: 20,
     wall: wall,
     offset: clampedOffset
   };
@@ -208,6 +209,11 @@ function renderInspector() {
     <div class="wall-add-btns" style="margin-bottom:8px"><button onclick="rotateItem(${item.uid})">↻ Повернуть 90°</button><button onclick="duplicateItem(${item.uid})">＋ Копия</button></div>
     <div class="note">Поворот: ${item.rotation||0}°. На плане: ${placedSize(item).w} × ${placedSize(item).d} мм вдоль / от стены.</div>
     ${bikeControls}
+    ${item.isLadder?'<div class="note">Хранение в сложенном виде. Начальные размеры примерные — замените своими.</div>':''}
+    ${item.isBike?`<fieldset style="margin:8px 0;border:1px solid #cbd5e1;border-radius:8px"><legend>Зона снятия велосипеда</legend>
+    <label><input type="checkbox" ${item.clearanceVisible!==false?'checked':''} onchange="editBikeClearance(${item.uid},'clearanceVisible',this.checked)"> Показать в 2D и 3D</label>
+    ${[['bikeLength','Длина велосипеда',1750],['handlingSpace','Запас для человека',600],['liftSpace','Подъём с крюка',150]].map(([k,label,v])=>`<label class="inspector-row">${label}, мм<input aria-label="${k}" type="number" min="0" max="5000" value="${item[k]??v}" onchange="editBikeClearance(${item.uid},'${k}',this.value)"></label>`).join('')}
+    <div class="note">Оценочный объём для опускания и манёвра. Не проверяет весь путь через дверь. Размеры уточните по велосипеду и креплению.</div></fieldset>`:''}
     <div class="note">Размеры вдоль стены × глубина × высота, мм</div>
     ${['w','d','h','gap','z'].map((k,j)=>`<label class="inspector-row">${['Ширина вдоль стены','Глубина','Высота','Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="${k==='gap'||k==='z'?0:1}" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
 
@@ -350,7 +356,7 @@ function render2D() {
         <rect x="${r.x+r.width-30}" y="${r.y+r.height-30}" width="24" height="24" fill="${item.color}"/>
         <text x="${cx}" y="${cy - 15}" fill="#0f172a" font-size="54" font-weight="bold" text-anchor="middle" dominant-baseline="middle"
               transform="${isVert ? `rotate(-90 ${cx},${cy})` : ''}">
-          ${item.w}×${item.d}
+          ${item.isLadder?'Стремянка ':''}${item.w}×${item.d}
         </text>
         <text x="${cx}" y="${cy + 45}" fill="#334155" font-size="42" text-anchor="middle" dominant-baseline="middle"
               transform="${isVert ? `rotate(-90 ${cx},${cy})` : ''}">
@@ -408,6 +414,7 @@ function render2D() {
 
     <!-- Стеллажи и велосипед -->
     ${itemsSvg}
+    ${renderBikeClearance2D()}
 
     <!-- Стены кладовой (замкнутый контур) -->
     <path d="M 0,0 L 1468,0 L 1468,1394 L 1779,1394 L 1779,2860 L 0,2860 Z"
@@ -636,14 +643,14 @@ function analyze(){
 }
 function updateAnalysis(){
  const a=analyze();document.getElementById('layoutStats').innerHTML=`Пол: <b>${(ROOM_AREA/1e6).toFixed(2)} м²</b><br>Свободно на полу: <b>${a.freeArea.toFixed(2)} м²</b><br><span class="note">Без двойного учёта пересечений. Подвешенные предметы не занимают пол, но могут мешать проходу. Зелёные линии — просветы в двух сечениях, не гарантия проходимости.</span>`;
- const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';
+ const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
 function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));refreshAll();}
-function snapshot(){return {version:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0}))};}
+function snapshot(){return {version:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1750,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
- const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;return i;});
+ const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}for(const [key,fallback] of [['bikeLength',1750],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;return i;});
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');items=parsed;ceilingHeight=h;nextUid=items.length+1;selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
 function restorePlan(){try{if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
@@ -662,3 +669,24 @@ function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
 function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';const item=items.find(i=>i.uid===uid);const bikeActions=item.isBike?(item.bikeMode==='vert'?[['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]]:[['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]]):[];for(const [label,fn] of [...bikeActions,['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
+
+// Conservative handling envelope, separate from the stored object and floor area.
+function getBikeClearance(item){
+ const r=getItemRect(item),extra=item.handlingSpace??600;
+ const depth=item.bikeMode==='vert'?Math.max(placedSize(item).d,(item.bikeLength??1750)+extra):placedSize(item).d+extra;
+ let zone={...r};
+ if(item.wall==='top')zone.height=depth;
+ else {zone.width=depth;if(item.wall==='right_top'||item.wall==='right_bot')zone.x=r.x+r.width-depth;}
+ return {...zone,height3d:(item.z||0)+item.h+(item.bikeMode==='vert'?(item.liftSpace??150):0)};
+}
+function bikeClearanceIssues(item){
+ const r=getBikeClearance(item),issues=[];
+ if(!rectInside(r))issues.push('выходит за стены / границы помещения');
+ for(const other of items)if(other.uid!==item.uid&&overlap(r,getItemRect(other))&&(other.z||0)<r.height3d)issues.push(`мешает объект №${other.uid}`);
+ if(r.height3d>ceilingHeight)issues.push('не хватает высоты для подъёма');
+ if(r.height3d>3221)issues.push('проверьте пересечение с трубой');
+ return issues;
+}
+function editBikeClearance(uid,key,value){const i=items.find(i=>i.uid===uid);if(!i?.isBike)return;if(key==='clearanceVisible')i[key]=!!value;else if(['bikeLength','handlingSpace','liftSpace'].includes(key)&&Number.isFinite(Number(value)))i[key]=Math.max(0,Math.min(5000,Number(value)));refreshAll();}
+function renderBikeClearance2D(){return items.filter(i=>i.isBike&&i.clearanceVisible!==false).map(i=>{const r=getBikeClearance(i),color=bikeClearanceIssues(i).length?'#dc2626':'#0d9488';return `<g pointer-events="none" data-clearance="${i.uid}"><rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${color}" fill-opacity=".07" stroke="${color}" stroke-width="6" stroke-dasharray="30 16"/><text x="${r.x+r.width/2}" y="${r.y+r.height-30}" text-anchor="middle" fill="${color}" font-size="42">Снятие: ${Math.round(r.width)}×${Math.round(r.height)} мм</text></g>`;}).join('');}
+window.getBikeClearance=getBikeClearance;window.bikeClearanceIssues=bikeClearanceIssues;
