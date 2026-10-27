@@ -24,7 +24,7 @@ try {
   for(const z of [-38,38]){rod(rear.clone().add(v(0,0,z)),seat,paint,10);rod(rear.clone().add(v(0,0,z)),crank,paint,10);rod(fork.clone().add(v(0,0,z)),front.clone().add(v(0,0,z)),metal,15);}
   rod(seat,v(-235,890),metal,12);block(235,40,140,-250,905,0,dark);
   rod(head,v(395,970),metal,13);rod(v(395,970),v(470,995),dark,13);
-  const bar=item.bikeMode==='floor_turn'?420:620;rod(v(470,995,-bar/2+20),v(470,995,bar/2-20),metal,12);
+  const bar=item.bikeMode==='floor_turn'?420:500;rod(v(470,995,-bar/2+20),v(470,995,bar/2-20),metal,12);
   for(const sign of [-1,1]){rod(v(470,995,sign*(bar/2-100)),v(470,995,sign*(bar/2-12)),dark,19);rod(v(470,990,sign*(bar/2-100)),v(420,960,sign*(bar/2-80)),dark,6);}
   ring(85,8,crank.x,crank.y,52,dark);ring(45,6,rear.x,rear.y,52,metal);
   rod(v(crank.x,crank.y+80,52),v(rear.x,rear.y+42,52),dark,4);rod(v(crank.x,crank.y-80,52),v(rear.x,rear.y-42,52),dark,4);

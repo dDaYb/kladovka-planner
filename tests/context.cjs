@@ -11,7 +11,7 @@ assert.equal(await page.evaluate(()=>items.find(i=>i.isBike).bikeMode),'floor');
 await page.evaluate(()=>{const i=items.find(i=>i.isBike);i.rotation=90;refreshAll();});
 await page.evaluate(uid=>openObjectMenu(uid,600,300),bikeId);
 await page.getByRole('menuitem',{name:'Подвесить на стену колесом вверх',exact:true}).click();
-assert.deepEqual(await page.evaluate(()=>{const i=items.find(i=>i.isBike);return [i.bikeMode,i.modelId,i.w,i.d,i.h,i.rotation];}),['vert','bike_vert',800,1000,2000,0]);
+assert.deepEqual(await page.evaluate(()=>{const i=items.find(i=>i.isBike);return [i.bikeMode,i.modelId,i.w,i.d,i.h,i.rotation];}),['vert','bike_vert',500,1000,1700,0]);
 assert.equal(await page.locator('#objectMenu').count(),0);
 await page.reload();await page.waitForFunction(()=>window.renderWebGL);
 assert.equal(await page.evaluate(()=>items.find(i=>i.isBike).modelId),'bike_vert');
