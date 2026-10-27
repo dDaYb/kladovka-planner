@@ -1,0 +1,9 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-swiftshader']});const p=await b.newPage({viewport:{width:1600,height:1000}});const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(process.env.PLANNER_URL||'http://127.0.0.1:8765');await p.waitForFunction(()=>window.renderWebGL&&items.length===4);
+await p.evaluate(()=>freeBike(items.find(i=>i.isBike).uid));assert.equal(await p.evaluate(()=>items.find(i=>i.isBike).free),true);
+await p.evaluate(()=>{const i=items.find(i=>i.isBike);editFreePosition(i.uid,'x',300);editFreePosition(i.uid,'y',1000);});await p.reload();assert.deepEqual(await p.evaluate(()=>{const r=getItemRect(items.find(i=>i.isBike));return [r.x,r.y];}),[300,1000]);
+const old=await p.evaluate(()=>JSON.stringify(snapshot()));await p.getByRole('button',{name:'Авторасстановка',exact:true}).click();assert.ok(await p.evaluate(()=>beforeAuto!==null));assert.deepEqual(await p.evaluate(()=>analyze().warnings),[]);assert.equal(await p.evaluate(()=>items.length),4);await p.screenshot({path:'test-results/auto-layout.png'});
+await p.getByRole('button',{name:'Отменить авторасстановку',exact:true}).click();assert.equal(await p.evaluate(()=>JSON.stringify(snapshot())),old);
+await p.evaluate(()=>{applyPreset('se_bike');addItem('ladder_folded','left',1800);autoArrange();});assert.ok(await p.evaluate(()=>beforeAuto!==null));assert.deepEqual(await p.evaluate(()=>analyze().warnings),[]);
+await p.evaluate(()=>{items[0].w=9000;});const impossible=await p.evaluate(()=>JSON.stringify(snapshot()));await p.evaluate(()=>autoArrange());assert.equal(await p.evaluate(()=>JSON.stringify(snapshot())),impossible);
+assert.deepEqual(errors,[]);console.log('PASS: free bicycle, persistence, auto arrangement, ladder, undo, no solution preserves plan');await b.close();})();

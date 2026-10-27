@@ -58,6 +58,7 @@ function findCatalogModel(modelId) {
 
 // Вычисление мировых 2D координат прямоугольника объекта (x, y, width, height)
 function getItemRect(item) {
+  if(item.free){const size=placedSize(item);return {x:item.x||0,y:item.y||0,width:item.wall==='top'?size.w:size.d,height:item.wall==='top'?size.d:size.w};}
   const w = placedSize(item).w; // rotated footprint along wall
   const d = placedSize(item).d; const gap = item.gap || 0; // wall clearance
   if (item.wall === 'top') {
@@ -209,6 +210,8 @@ function renderInspector() {
     <div class="wall-add-btns" style="margin-bottom:8px"><button onclick="rotateItem(${item.uid})">↻ Повернуть 90°</button><button onclick="duplicateItem(${item.uid})">＋ Копия</button></div>
     <div class="note">Поворот: ${item.rotation||0}°. На плане: ${placedSize(item).w} × ${placedSize(item).d} мм вдоль / от стены.</div>
     ${bikeControls}
+    ${item.isBike?`<button class="btn" onclick="freeBike(${item.uid})">Поставить свободно между стеллажами</button><div class="note">Свободный режим: перетаскивайте в любую точку. Поворот — 90°. Выбор стены возвращает привязку.</div>`:''}
+    ${item.free?`<div class="note">Свободное положение, мм от левого верхнего угла</div>${['x','y'].map(k=>`<label class="inspector-row">${k.toUpperCase()}<input aria-label="position-${k}" type="number" value="${item[k]||0}" onchange="editFreePosition(${item.uid},'${k}',this.value)"></label>`).join('')}`:''}
     ${item.isLadder?'<div class="note">Хранение в сложенном виде. Начальные размеры примерные — замените своими.</div>':''}
     ${item.isBike?`<fieldset style="margin:8px 0;border:1px solid #cbd5e1;border-radius:8px"><legend>Зона снятия велосипеда</legend>
     <label><input type="checkbox" ${item.clearanceVisible!==false?'checked':''} onchange="editBikeClearance(${item.uid},'clearanceVisible',this.checked)"> Показать в 2D и 3D</label>
@@ -247,6 +250,7 @@ function setBikeMode(uid, mode) {
   closeObjectMenu();
   if (item.bikeMode !== mode) {
     item.bikeMode = mode;
+    if(mode==='vert')item.free=false;
     item.modelId = modelId;
     item.w = mode === 'vert' ? 500 : 1700;
     item.d = mode === 'vert' ? 1000 : mode === 'floor_turn' ? 420 : 500;
@@ -262,7 +266,8 @@ function setBikeMode(uid, mode) {
   function changeItemWall(uid, newWall) {
   const item = items.find(i => i.uid === uid);
   if (!item) return;
-  item.wall = newWall;
+  item.free = false;
+    item.wall = newWall;
   item.offset = 0;
   refreshAll();
 }
@@ -456,7 +461,7 @@ function onSvgPointerDown(evt) {
     startX: pt.x,
     startY: pt.y,
     origWall: item.wall,
-    origOffset: item.offset
+    origOffset: item.offset, origX:getItemRect(item).x,origY:getItemRect(item).y
   };
   renderInspector();
   render2D();
@@ -470,6 +475,7 @@ function onSvgPointerMove(evt) {
   if (!item) return;
   const pt = getSvgPoint(evt);
 
+  if(item.free){item.x=Math.round((dragState.origX+pt.x-dragState.startX)/10)*10;item.y=Math.round((dragState.origY+pt.y-dragState.startY)/10)*10;renderInspector();render2D();render3D();return;}
   // Определяем ближайшую стену к курсору мыши
   const distTop = Math.abs(pt.y - 0);
   const distLeft = Math.abs(pt.x - 0);
@@ -646,11 +652,11 @@ function updateAnalysis(){
  const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
 function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));refreshAll();}
-function snapshot(){return {version:1,bikeMeasurements:2,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
+function snapshot(){return {version:1,bikeMeasurements:2,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
- const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}for(const [key,fallback] of [['bikeLength',1700],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}return i;});
+ const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}for(const [key,fallback] of [['bikeLength',1700],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}i.free=!!r.free;for(const key of ['x','y']){const n=Number(r[key]??0);if(!Number.isFinite(n)||Math.abs(n)>10000)throw Error('Некорректная позиция.');i[key]=n;}i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}return i;});
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');items=parsed;ceilingHeight=h;nextUid=items.length+1;selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
 function restorePlan(){try{if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
@@ -664,7 +670,7 @@ document.addEventListener('keydown',e=>{if((e.key==='Delete'||e.key==='Backspace
 
 function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.d};}
 function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();i.rotation=((i.rotation||0)+90)%360;selectedId=uid;refreshAll();}
-function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
+function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
 function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';const item=items.find(i=>i.uid===uid);const bikeActions=item.isBike?(item.bikeMode==='vert'?[['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]]:[['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]]):[];for(const [label,fn] of [...bikeActions,['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
@@ -690,3 +696,42 @@ function bikeClearanceIssues(item){
 function editBikeClearance(uid,key,value){const i=items.find(i=>i.uid===uid);if(!i?.isBike)return;if(key==='clearanceVisible')i[key]=!!value;else if(['bikeLength','handlingSpace','liftSpace'].includes(key)&&Number.isFinite(Number(value)))i[key]=Math.max(0,Math.min(5000,Number(value)));refreshAll();}
 function renderBikeClearance2D(){return items.filter(i=>i.isBike&&i.clearanceVisible!==false).map(i=>{const r=getBikeClearance(i),color=bikeClearanceIssues(i).length?'#dc2626':'#0d9488';return `<g pointer-events="none" data-clearance="${i.uid}"><rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${color}" fill-opacity=".07" stroke="${color}" stroke-width="6" stroke-dasharray="30 16"/><text x="${r.x+r.width/2}" y="${r.y+r.height-30}" text-anchor="middle" fill="${color}" font-size="42">Снятие: ${Math.round(r.width)}×${Math.round(r.height)} мм</text></g>`;}).join('');}
 window.getBikeClearance=getBikeClearance;window.bikeClearanceIssues=bikeClearanceIssues;
+
+function freeBike(uid){const i=items.find(i=>i.uid===uid);if(!i?.isBike)return;const r=getItemRect(i);if(i.bikeMode==='vert')setBikeMode(uid,'floor');i.free=true;i.x=r.x;i.y=r.y;refreshAll();toast('Велосипед стоит на полу. Перемещайте его в любую точку; поворот — 90°.');}
+function editFreePosition(uid,key,value){const i=items.find(i=>i.uid===uid),n=Number(value);if(!i||!['x','y'].includes(key)||!Number.isFinite(n))return;i[key]=Math.max(-5000,Math.min(5000,Math.round(n)));refreshAll();}
+let beforeAuto=null;
+function undoAutoArrange(){if(!beforeAuto)return;const old=beforeAuto;beforeAuto=null;loadSnapshot(old);document.getElementById('undoAuto').disabled=true;toast('Предыдущая расстановка восстановлена.');}
+function autoArrange(){
+ if(!items.length){toast('Сначала добавьте предметы.');return;}
+ if(items.length>20){toast('Авторасстановка рассчитана максимум на 20 предметов.');return;}
+ const entrance={x:510,y:2460,width:1077,height:400};
+ const source=items.map(i=>({...i}));let best=null,bestScore=Infinity;
+ function candidates(item,placed){const out=[];
+  if(item.isBike&&item.bikeMode!=='vert'){
+   for(const rotation of [0,90]){const proto={...item,free:true,wall:'top',rotation};const size=placedSize(proto);
+    const xs=new Set([20,1779-size.w-20]),ys=new Set([20,2860-size.d-20]);
+    for(let x=20;x+size.w<=1779;x+=100)xs.add(x);for(let y=20;y+size.d<=2860;y+=100)ys.add(y);
+    for(const p of placed){const r=getItemRect(p);xs.add(r.x+r.width+20);xs.add(r.x-size.w-20);ys.add(r.y+r.height+20);ys.add(r.y-size.d-20);}
+    for(const x of xs)for(const y of ys)out.push({...proto,x,y});
+   }
+  }else for(const wall of Object.keys(WALL_INFO))for(const rotation of [0,90]){const proto={...item,free:false,wall,rotation,gap:20},size=placedSize(proto),max=WALL_INFO[wall].maxLen-size.w-20;if(max<20)continue;const offsets=new Set([20,max]);for(let v=20;v<=max;v+=100)offsets.add(v);for(const p of placed){const r=getItemRect(p),start=wall==='top'?r.x:r.y-(wall==='right_bot'?1394:0),len=wall==='top'?r.width:r.height;offsets.add(start+len+20);offsets.add(start-size.w-20);}for(const offset of offsets)out.push({...proto,offset});}
+  return out.filter(c=>{const r=getItemRect(c);return rectInside(r)&&!overlap(r,entrance)&&(c.z||0)+c.h<=ceilingHeight&&!placed.some(p=>overlap({x:r.x-10,y:r.y-10,width:r.width+20,height:r.height+20},getItemRect(p))&&(c.z||0)<(p.z||0)+p.h&&(p.z||0)<(c.z||0)+c.h);});
+ }
+ for(let trial=0;trial<28;trial++){
+  const order=source.slice().sort((a,b)=>((a.isBike?1:0)-(b.isBike?1:0))||((trial%2?a.w*a.d-b.w*b.d:b.w*b.d-a.w*a.d)));
+  if(trial%4===3)order.reverse();const placed=[];let score=0;
+  for(const item of order){const choices=candidates(item,placed).map(c=>{const r=getItemRect(c);const edge=Math.min(r.x,Math.abs(1779-r.x-r.width));return {c,score:r.y*.2+edge*.5+(c.rotation?30:0)+(item.isBike?-r.y*.3+(r.width>1000?5000:0):0)};}).sort((a,b)=>a.score-b.score);if(!choices.length)break;const accessible=choices.filter(v=>autoReachable([...placed,v.c]));if(!accessible.length)break;const choice=accessible[Math.min(accessible.length-1,trial%4)];placed.push(choice.c);score+=choice.score;}
+  if(placed.length===source.length&&autoReachable(placed)&&score<bestScore){best=placed;bestScore=score;}
+ }
+ if(!best){toast('Не удалось разместить все предметы без пересечений и с зоной у входа. Текущий план сохранён.');return;}
+ beforeAuto=snapshot();items=source.map(i=>best.find(p=>p.uid===i.uid));document.getElementById('undoAuto').disabled=false;refreshAll();toast('Предметы расставлены. Проверен проход 400 мм по сетке. Проверьте удобство доступа и зону снятия велосипеда; доступна отмена.');
+}
+
+// Coarse 400 mm-wide access check. This is not a swept bicycle trajectory.
+function autoReachable(layout){
+ const radius=200,step=100,queue=[],seen=new Set(),rects=layout.filter(i=>(i.z||0)<1800).map(getItemRect);
+ function clear(x,y){const r={x:x-radius,y:y-radius,width:radius*2,height:radius*2};return rectInside(r)&&!rects.some(o=>overlap(r,o));}
+ for(let x=710;x<=1387;x+=step)if(clear(x,2660)){queue.push([x,2660]);seen.add(`${x},2660`);}
+ for(let k=0;k<queue.length;k++){const [x,y]=queue[k];for(const [dx,dy] of [[step,0],[-step,0],[0,step],[0,-step]]){const nx=x+dx,ny=y+dy,key=`${nx},${ny}`;if(!seen.has(key)&&clear(nx,ny)){seen.add(key);queue.push([nx,ny]);}}}
+ return layout.every(i=>{const r=getItemRect(i);return queue.some(([x,y])=>{const dx=Math.max(r.x-x,0,x-r.x-r.width),dy=Math.max(r.y-y,0,y-r.y-r.height);if(Math.hypot(dx,dy)>350)return false;if(i.isBike||i.isSki||i.isLadder||i.free)return true;return i.wall==='top'?y>=r.y+r.height:i.wall==='left'?x>=r.x+r.width:x<=r.x;});});
+}
