@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kladovka Planner — планировщик кладовки</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --border: #dce1e7;
+    --text: #1c2833;
+    --muted: #5d6d7e;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --warn: #d97706;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    z-index: 10;
+  }
+  .title-block h1 {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .title-block span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .presets-bar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+  .btn.active, .btn.primary {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.success {
+    background: var(--success);
+    color: #fff;
+    border-color: var(--success);
+  }
+  .btn.danger {
+    color: var(--danger);
+    border-color: #fecaca;
+    background: #fef2f2;
+  }
+  .summary-pill {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* Main layout */
+  .main-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 370px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 14px;
+    gap: 14px;
+  }
+  .section-box {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: #fafbfc;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    background: #e2e8f0;
+    padding: 3px;
+    border-radius: 6px;
+  }
+  .tab-btn {
+    flex: 1;
+    text-align: center;
+    padding: 5px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .tab-btn.active {
+    background: #fff;
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+  .catalog-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 270px;
+    overflow-y: auto;
+  }
+  .catalog-item {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .catalog-item-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .catalog-item-name {
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .catalog-item-sub {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .catalog-item-price {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    white-space: nowrap;
+  }
+  .wall-add-btns {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .wall-add-btns button {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 11px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .wall-add-btns button:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  /* Inspector */
+  .inspector-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px;
+    gap: 8px;
+  }
+  .inspector-row input[type="range"] {
+    flex: 1;
+  }
+  .inspector-row input[type="number"] {
+    width: 70px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  /* Workspace */
+  .workspace {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+  }
+  .pane-2d, .pane-3d {
+    flex: 1;
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .pane-2d {
+    background: #ffffff;
+    border-right: 1px solid var(--border);
+  }
+  .pane-3d {
+    background: #eef2f6;
+  }
+  .pane-label {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    z-index: 5;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  }
+  .svg-container {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+  }
+  svg#plan2d {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    cursor: default;
+  }
+  canvas#canvas3d {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  canvas#canvas3d:active { cursor: grabbing; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    max-width: 680px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+  }
+  .modal-body {
+    padding: 16px 18px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  table.bom-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    margin-bottom: 14px;
+  }
+  table.bom-table th, table.bom-table td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+  }
+  table.bom-table th { background: #f8fafc; }
+  .badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .badge-se { background: #dbeafe; color: #1e40af; }
+  .badge-lm { background: #dcfce7; color: #166534; }
+  .badge-bike { background: #fef3c7; color: #92400e; }
+
+  @media (max-width: 960px) {
+    body { overflow: auto; height: auto; }
+    .main-container { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+    .workspace { flex-direction: column; height: 900px; }
+  }
+
+.note{font-size:12px;line-height:1.55;color:#596579}.tabs{flex-wrap:wrap}.warn{color:#9a3412;background:#fff7ed;padding:7px;border-radius:5px;margin:5px 0;font-size:12px}.ok{color:#166534;font-size:12px;margin-top:8px}#layoutStats{font-size:13px;line-height:1.7}#plan2d,#canvas3d{touch-action:none}#glStatus{position:absolute;bottom:20px;left:20px;font-size:12px;max-width:85%;background:white;padding:8px}.inspector-row input[type=number]{width:100%;padding:6px}button:focus-visible,input:focus-visible{outline:3px solid #93c5fd}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172b45;color:white;padding:12px 20px;border-radius:8px;z-index:99}.pane-3d{min-height:320px} @media(max-width:960px){.sidebar{max-height:none}.workspace{height:1000px}.pane-2d,.pane-3d{min-height:450px}.main-container{overflow:visible}header{padding:12px}.title-block h1{font-size:19px}} 
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>Kladovka Planner · 4,65 м²</h1>
+    <span>Точный план и WebGL · перемещение на плане · Del — удалить выбранное</span>
+  </div>
+
+  <div class="presets-bar">
+    <button class="btn" onclick="applyPreset('se_bike')">3 стеллажа + велосипед</button>
+    <button class="btn" onclick="applyPreset('lm_bike')">Альтернатива · Лемана</button>
+    <button class="btn" onclick="applyPreset('se_full')">Полная смета SE · проверить коллизии</button>
+    <button class="btn" onclick="applyPreset('lm_full')">Полная альтернатива · проверить</button>
+    <button class="btn danger" onclick="clearAll()">Очистить</button>
+  </div>
+
+  <div class="presets-bar"><button class="btn" onclick="exportPlan()">Скачать проект</button><button class="btn" onclick="document.getElementById('importFile').click()">Открыть проект</button><button class="btn" onclick="sharePlan()">Ссылка на план</button><button class="btn" onclick="exportSvg()">Скачать чертёж</button><input type="file" id="importFile" accept=".json,application/json" hidden onchange="importPlan(this.files[0]);this.value=''"></div><div class="summary-pill">
+    <span id="headerCount">0 поз.</span>
+    <span>|</span>
+    <span id="headerTotal">0 ₽</span>
+    <button class="btn primary" style="padding:4px 10px;" onclick="openBomModal()">📋 Смета / Поделиться</button>
+  </div>
+</header>
+
+<div class="main-container">
+  <!-- LEFT SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- SELECTED ITEM INSPECTOR -->
+    <div class="section-box" id="inspectorBox">
+      <div class="section-title">
+        <span>⚙️ Выбранный объект</span>
+        <span id="selBadge" class="badge badge-se">—</span>
+      </div>
+      <div id="inspectorContent" style="font-size:12px; color:var(--muted);">
+        Кликните на любой стеллаж или велосипед на 2D-плане, чтобы настроить его положение, стену или повернуть руль.
+      </div>
+    </div>
+
+    <div class="section-box"><div class="section-title">Проверка планировки</div><div id="layoutStats" aria-live="polite"></div><div id="warnings" aria-live="polite"></div></div><!-- CATALOG -->
+    <div class="section-box">
+      <div class="section-title">
+        <span>Добавить объект</span>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchCatalogTab('se', this)">SE 750кг (3м)</button>
+        <button class="tab-btn" onclick="switchCatalogTab('lm', this)">Лемана ПРО</button>
+        <button class="tab-btn" onclick="switchCatalogTab('bike', this)">🚲 Велосипед</button>
+      <button class="tab-btn" onclick="switchCatalogTab('ski', this)">Лыжи</button></div>
+      <div class="catalog-list" id="catalogList"></div>
+    </div>
+
+    <div class="section-box note">Цены SE — из вашей сметы, остальные — из исходного файла, не проверены на сегодня. Велосипед и лыжи заданы примерными габаритами; их можно изменить. Размер 1466 согласован вместо 1463. Дверь с наличниками ≈1077; дуга открывания и трасса трубы неизвестны.</div><!-- ROOM & 3D SETTINGS -->
+    <div class="section-box">
+      <div class="section-title">
+        <span>📐 Параметры помещения и 3D</span>
+      </div>
+      <div class="inspector-row">
+        <span>Высота потолка: <b id="ceilVal">3358</b> мм</span>
+        <input type="range" min="1800" max="3400" step="1" value="3358" oninput="updateCeiling(this.value)">
+      </div>
+      <div class="inspector-row">
+        <span>Прозрачность стен в 3D:</span>
+        <input type="range" min="0" max="100" step="10" value="35" oninput="updateWallOpacity(this.value)">
+      </div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button class="btn" style="flex:1;" onclick="setViewMode('split')">2D + 3D</button>
+        <button class="btn" style="flex:1;" onclick="setViewMode('2d')">Только 2D</button>
+        <button class="btn" style="flex:1;" onclick="setViewMode('3d')">Только 3D</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- WORKSPACE: 2D & 3D -->
+  <div class="workspace">
+    <div class="pane-2d" id="pane2d">
+      <div class="pane-label">2D Чертеж (вид сверху, размеры в мм)</div>
+      <div class="svg-container">
+        <svg id="plan2d" viewBox="-420 -340 2650 3550"></svg>
+      </div>
+    </div>
+    <div class="pane-3d" id="pane3d">
+      <div class="pane-label">3D Визуализация (ЛКМ — вращение, Колесо — зум, ПКМ — сдвиг)</div>
+      <canvas id="canvas3d"></canvas><div id="glStatus" role="status">Загрузка WebGL…</div>
+    </div>
+  </div>
+</div>
+
+<!-- BOM MODAL -->
+<div class="modal-backdrop" id="bomModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Спецификация и смета проекта кладовой (4.65 м²)</span>
+      <button class="btn" onclick="closeBomModal()">✕ Закрыть</button>
+    </div>
+    <div class="modal-body" id="bomBody"></div>
+  </div>
+</div>
+
+<script src="app.js" defer></script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module" src="webgl.js"></script>
+</body>
+</html>
