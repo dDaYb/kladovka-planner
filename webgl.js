@@ -30,8 +30,7 @@ try {
   rod(v(crank.x,crank.y+80,52),v(rear.x,rear.y+42,52),dark,4);rod(v(crank.x,crank.y-80,52),v(rear.x,rear.y-42,52),dark,4);
   for(const sign of [-1,1]){rod(v(crank.x,crank.y,sign*60),v(crank.x+sign*100,crank.y-sign*90,sign*60),metal,10);block(90,22,100,crank.x+sign*100,crank.y-sign*90,sign*100,dark);}
   if(item.bikeMode==='vert')g.rotation.z=Math.PI/2;
-  const side=(item.wall!=='top')!==((item.rotation||0)%180===90);
-  g.rotation.y=item.bikeMode==='vert'?(side?0:Math.PI/2):(side?Math.PI/2:0);
+  g.rotation.y=-window.bikeHeading(item)*Math.PI/180;
   g.updateMatrixWorld(true);let bounds=new THREE.Box3().setFromObject(g),size=bounds.getSize(new THREE.Vector3());
   const scale=Math.min(r.width/size.x,item.h/size.y,r.height/size.z)*.97;g.scale.setScalar(scale);g.updateMatrixWorld(true);bounds=new THREE.Box3().setFromObject(g);
   const center=bounds.getCenter(new THREE.Vector3());g.position.set(r.x+r.width/2-center.x,(item.z||0)-bounds.min.y,r.y+r.height/2-center.z);

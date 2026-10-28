@@ -330,15 +330,12 @@ function render2D() {
         <g class="draggable" data-uid="${item.uid}" style="cursor:move;">
           <rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}"
                 fill="${item.color}" fill-opacity="0.22" stroke="${stroke}" stroke-width="${strokeW}" stroke-dasharray="18,10" rx="20"/>
-          <!-- Рама и колеса -->
-          <line x1="${isVertWall ? cx : r.x + 140}" y1="${isVertWall ? r.y + 140 : cy}"
-                x2="${isVertWall ? cx : r.x + r.width - 140}" y2="${isVertWall ? r.y + r.height - 140 : cy}"
-                stroke="#b45309" stroke-width="26" stroke-linecap="round"/>
-          <!-- Руль -->
-          <line x1="${cx - (isVertWall ? r.width*0.36 : 0)}" y1="${isVertWall ? r.y + 220 : cy - r.height*0.36}"
-                x2="${cx + (isVertWall ? r.width*0.36 : 0)}" y2="${isVertWall ? r.y + 220 : cy + r.height*0.36}"
-                stroke="#1e293b" stroke-width="18" stroke-linecap="round"/>
-          <text x="${cx}" y="${cy}" fill="#7c2d12" font-size="56" font-weight="bold" text-anchor="middle" dominant-baseline="middle"
+          <g class="bike-heading" transform="translate(${cx} ${cy}) rotate(${bikeHeading(item)})">
+            <line x1="${-(item.bikeMode==='vert'?item.d:item.w)*.4}" y1="0" x2="${(item.bikeMode==='vert'?item.d:item.w)*.4}" y2="0" stroke="#b45309" stroke-width="26" stroke-linecap="round"/>
+            <line x1="${(item.bikeMode==='vert'?item.d:item.w)*.3}" y1="${-(item.bikeMode==='vert'?item.w:item.d)*.36}" x2="${(item.bikeMode==='vert'?item.d:item.w)*.3}" y2="${(item.bikeMode==='vert'?item.w:item.d)*.36}" stroke="#1e293b" stroke-width="18" stroke-linecap="round"/>
+            <path d="M -30,-45 L 45,0 L -30,45" fill="none" stroke="#92400e" stroke-width="12"/>
+          </g>
+          <text x="${cx}" y="${cy+85}" fill="#7c2d12" font-size="56" font-weight="bold" text-anchor="middle" dominant-baseline="middle"
                 transform="${isVertWall ? `rotate(-90 ${cx},${cy})` : ''}">
             🚲 ${item.w}×${item.d}
           </text>
@@ -669,7 +666,9 @@ function toast(message){document.querySelector('.toast')?.remove();const el=docu
 document.addEventListener('keydown',e=>{if((e.key==='Delete'||e.key==='Backspace')&&selectedId!=null&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&!document.getElementById('bomModal').classList.contains('open')){e.preventDefault();deleteItem(selectedId);}if(e.key==='Escape')closeBomModal();});
 
 function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.d};}
-function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();i.rotation=((i.rotation||0)+90)%360;selectedId=uid;refreshAll();}
+function bikeHeading(i){const base=i.bikeMode==='vert'?(i.wall==='top'?90:0):(i.wall==='top'?0:90);return (base+(i.rotation||0))%360;}
+window.bikeHeading=bikeHeading;
+function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();const old=getItemRect(i);i.rotation=((i.rotation||0)+90)%360;if(i.free){const next=getItemRect(i);i.x=old.x+(old.width-next.width)/2;i.y=old.y+(old.height-next.height)/2;}selectedId=uid;refreshAll();}
 function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
 function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';const item=items.find(i=>i.uid===uid);const bikeActions=item.isBike?(item.bikeMode==='vert'?[['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]]:[['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]]):[];for(const [label,fn] of [...bikeActions,['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
