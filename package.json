@@ -4,7 +4,7 @@
   "private": true,
   "description": "Storage room layout planner with SVG and WebGL",
   "scripts": {
-    "test": "node tests/browser.cjs && node tests/context.cjs && node tests/storage.cjs && node tests/auto.cjs"
+    "test": "node tests/browser.cjs && node tests/context.cjs && node tests/storage.cjs && node tests/auto.cjs && node tests/rotation.cjs && node tests/sharing.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

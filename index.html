@@ -444,6 +444,7 @@
   </div>
 </div>
 
+<style>#shareDialog{margin:auto;max-height:calc(100vh - 32px);overflow:auto}#shareDialog::backdrop{background:rgba(15,23,42,.35)}</style>
 <!-- BOM MODAL -->
 <div class="modal-backdrop" id="bomModal">
   <div class="modal">
@@ -455,7 +456,15 @@
   </div>
 </div>
 
+<dialog id="shareDialog" aria-labelledby="shareTitle" style="width:min(480px,calc(100vw - 32px));box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:20px;color:#172b45">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><h3 id="shareTitle">Поделиться проектом</h3><button class="btn" onclick="document.getElementById('shareDialog').close()" aria-label="Закрыть окно ссылки">✕</button></div>
+  <p class="note">Ссылка открывает снимок текущей расстановки. Последующие изменения в неё не попадут. Доступ есть у каждого, кто получил ссылку; для сокращения данные проекта передаются сервису is.gd.</p>
+  <p id="shareStatus" role="status" aria-live="polite"></p>
+  <input id="shareResult" aria-label="Ссылка на проект" readonly style="box-sizing:border-box;width:100%;padding:10px;border:1px solid #94a3b8;border-radius:6px">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"><button id="copyShortLink" class="btn primary" disabled onclick="copyShareResult()">Копировать ссылку</button><button id="copyLongLink" class="btn" disabled onclick="showLongShareLink()">Обычная ссылка</button></div>
+</dialog>
 <script src="app.js" defer></script>
+<script src="sharing.js" defer></script>
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <script type="module" src="webgl.js"></script>
 </body>

@@ -618,10 +618,12 @@ function refreshAll() {
   updateAnalysis(); persist();
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   renderCatalog();
   init3DEvents();
-  if(!restorePlan()) applyPreset('se_bike');
+  if(!await restorePlan()) applyPreset('se_bike');
+  const shareButton=document.querySelector('[onclick="sharePlan()"]');
+  shareButton.textContent='Короткая ссылка';shareButton.onclick=shareShortPlan;
 });
 // Analysis uses the same millimetre coordinates in both views.
 const ROOM_AREA=1468*1394+1779*1466;
@@ -649,14 +651,14 @@ function updateAnalysis(){
  const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
 function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));refreshAll();}
-function snapshot(){return {version:1,bikeMeasurements:2,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
+function snapshot(){return {version:1,bikeMeasurements:2,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
  const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}for(const [key,fallback] of [['bikeLength',1700],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}i.free=!!r.free;for(const key of ['x','y']){const n=Number(r[key]??0);if(!Number.isFinite(n)||Math.abs(n)>10000)throw Error('Некорректная позиция.');i[key]=n;}i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}return i;});
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');items=parsed;ceilingHeight=h;nextUid=items.length+1;selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
-function restorePlan(){try{if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
+async function restorePlan(){try{if(location.hash.startsWith('#planz=')){loadSnapshot(await decodeCompressedPlan(location.hash.slice(7)));return true;}if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 function exportPlan(){download('kladovka-plan.json',JSON.stringify(snapshot(),null,2),'application/json');}
 async function importPlan(file){if(!file)return;try{if(file.size>200000)throw Error('Файл слишком большой');loadSnapshot(JSON.parse(await file.text()));toast('Проект открыт');}catch(e){toast(e.message);}}
