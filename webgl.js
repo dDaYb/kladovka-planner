@@ -46,11 +46,14 @@ try {
   const g=new THREE.Group();g.position.set(x,y,z);contents.add(g);
   const tint=new THREE.Color(c.color||'#64748b');
   const kind=c.kind||(String(c.modelId||'').startsWith('tire')?'tire':'box');
+  // Невидимый hitbox для клика по вещи в 3D (тор/спрайты плохо ловятся лучом).
+  const hit=new THREE.Mesh(new THREE.BoxGeometry(cw,ch,cd),new THREE.MeshBasicMaterial({visible:false}));
+  hit.name='cargo-hit';g.add(hit);
   if(kind==='tire'){
-   const major=Math.max(40,Math.min(cw,ch)/2-cd*0.22),tube=Math.max(18,cd*0.28);
-   const tire=new THREE.Mesh(new THREE.TorusGeometry(major,tube,10,28),new THREE.MeshStandardMaterial({color:0x111827,roughness:.92,metalness:.05}));
-   const rim=new THREE.Mesh(new THREE.TorusGeometry(major*0.55,tube*0.35,8,20),new THREE.MeshStandardMaterial({color:0xd1d5db,roughness:.45,metalness:.55}));
-   tire.rotation.y=Math.PI/2;rim.rotation.y=Math.PI/2;g.add(tire,rim);
+    const major=Math.max(40,Math.min(cw,ch)/2-cd*0.22),tube=Math.max(18,cd*0.28);
+    const tire=new THREE.Mesh(new THREE.TorusGeometry(major,tube,10,28),new THREE.MeshStandardMaterial({color:0x111827,roughness:.92,metalness:.05}));
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(major*0.55,tube*0.35,8,20),new THREE.MeshStandardMaterial({color:0xd1d5db,roughness:.45,metalness:.55}));
+    tire.rotation.y=Math.PI/2;rim.rotation.y=Math.PI/2;g.add(tire,rim);
   }else if(kind==='canister'){
    g.add(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.42,Math.min(cw,cd)*0.45,ch*0.9,16),new THREE.MeshStandardMaterial({color:tint,roughness:.55,metalness:.1})));
    g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.12,Math.min(cw,cd)*0.12,ch*0.18,10),new THREE.MeshStandardMaterial({color:0x334155,roughness:.4})),{position:new THREE.Vector3(0,ch*0.48,0)}));
@@ -69,7 +72,8 @@ try {
    sprite.position.set(0,ch*0.05,cd*0.48);sprite.scale.set(Math.min(cw*0.7,220),Math.min(ch*0.35,80),1);g.add(sprite);
    if(kind==='suitcase'){const handle=new THREE.Mesh(new THREE.TorusGeometry(cw*0.12,8,6,12,Math.PI),new THREE.MeshStandardMaterial({color:0x1e293b}));handle.rotation.x=Math.PI/2;handle.position.set(0,ch*0.5,0);g.add(handle);}
   }
-  if(selected){const halo=new THREE.Mesh(new THREE.BoxGeometry(cw*1.08,ch*1.08,cd*1.08),new THREE.MeshBasicMaterial({color:0x2563eb,transparent:true,opacity:0.12,depthWrite:false}));g.add(halo);}
+  if(selected){const halo=new THREE.Mesh(new THREE.BoxGeometry(cw*1.08,ch*1.08,cd*1.08),new THREE.MeshBasicMaterial({color:0x2563eb,transparent:true,opacity:0.18,depthWrite:false}));g.add(halo);}
+  return hit;
  }
  window.renderWebGL=()=>{const state=window.plannerState?.();if(!state)return;clear();const {items,getItemRect,ceilingHeight,wallOpacity,selectedId}=state;
   const shape=new THREE.Shape();[[0,0],[1468,0],[1468,1394],[1779,1394],[1779,2860],[0,2860]].forEach(([x,z],k)=>k?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();const floor=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:0xdbe4e9,side:THREE.DoubleSide}));floor.rotation.x=-Math.PI/2;contents.add(floor);
@@ -93,7 +97,8 @@ try {
      const cw=Math.min(c.w||200,Math.max(60,r.width-80)),cd=Math.min(c.d||150,Math.max(40,r.height-60)),ch=Math.max(40,c.h||100);
      const px=Math.min(cursor+cw/2,r.x+r.width-cw/2-20);
      const py=base+shelfZ+ch/2, selected=selectedCargo&&(selectedCargo===c.id||String(selectedCargo)===String(c.cid));
-     drawCargoMesh(c,cw,ch,cd,px,py,cz,selected);
+     const mesh=drawCargoMesh(c,cw,ch,cd,px,py,cz,selected);
+     if(mesh){mesh.userData={uid:item.uid,cargoId:c.id};selectable.push(mesh);}
      cursor=px+cw/2+24;
     }
    }
@@ -103,9 +108,22 @@ try {
  function resize(){const rect=canvas.parentElement.getBoundingClientRect();if(rect.width<1||rect.height<1)return;renderer.setSize(rect.width,rect.height,false);camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix();}
  new ResizeObserver(resize).observe(canvas.parentElement);window.addEventListener('resize',resize);
  const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();let down=null;
- function hitAt(e){const r=canvas.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);return raycaster.intersectObjects(selectable)[0];}
- canvas.addEventListener('contextmenu',e=>{e.preventDefault();const hit=hitAt(e);if(hit)window.openObjectMenu(hit.object.userData.uid,e.clientX,e.clientY);});
+ function pickHit(e){
+  const r=canvas.getBoundingClientRect();
+  mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObjects(selectable,true);
+  // Вещь на полке важнее габаритного контура стеллажа.
+  return hits.find(h=>h.object.userData?.cargoId)||hits[0]||null;
+ }
+ canvas.addEventListener('contextmenu',e=>{e.preventDefault();const hit=pickHit(e);if(hit?.object.userData?.uid!=null)window.openObjectMenu(hit.object.userData.uid,e.clientX,e.clientY);});
  canvas.addEventListener('pointermove',e=>{if(down&&Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)window.closeObjectMenu?.();});
- canvas.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);canvas.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const r=canvas.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);const hit=raycaster.intersectObjects(selectable)[0];if(hit)window.selectPlannerItem(hit.object.userData.uid);});
+ canvas.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+ canvas.addEventListener('pointerup',e=>{
+  if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;
+  const hit=pickHit(e);if(!hit)return;
+  const {uid,cargoId}=hit.object.userData||{};
+  if(uid!=null)window.selectPlannerItem(uid,cargoId);
+ });
  function frame(){requestAnimationFrame(frame);controls.update();renderer.render(scene,camera);}frame();window.renderWebGL();
 } catch(e){status.textContent='WebGL недоступен: '+e.message+'. План 2D продолжает работать.';console.error(e);}
