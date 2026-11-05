@@ -104,6 +104,83 @@ let wallOpacity = 0.35;
 let nextUid = 1;
 let nextCargoId = 1;
 let activeShelfIndex = 0; // полка выбранного стеллажа для добавления из каталога
+let selectedCargoId = null; // id выбранной вещи на полке (строка c_N)
+
+function cargoKind(modelId) {
+  if (modelId === 'tire_r18') return 'tire';
+  if (modelId === 'suitcase') return 'suitcase';
+  if (modelId === 'canister') return 'canister';
+  return 'box';
+}
+
+function makeCargoInstance(model, shelfIndex, order) {
+  const n = nextCargoId++;
+  return {
+    id: `c_${n}`,
+    cid: n,
+    modelId: model.id,
+    kind: cargoKind(model.id),
+    name: model.name,
+    w: model.w,
+    d: model.d,
+    h: model.h,
+    color: model.color,
+    shelfIndex,
+    order: Number.isFinite(order) ? order : 0,
+    inventory: [], // будущий список содержимого коробки
+    photo: null    // будущая фотка содержимого (data URL / ссылка)
+  };
+}
+
+function normalizeCargo(raw, shelfN) {
+  const n = Number(raw?.cid);
+  const cid = Number.isFinite(n) && n > 0 ? n : nextCargoId++;
+  if (cid >= nextCargoId) nextCargoId = cid + 1;
+  const id = typeof raw?.id === 'string' && raw.id ? String(raw.id).slice(0, 40) : `c_${cid}`;
+  const si = Math.max(0, Math.min(Math.max(0, shelfN - 1), Number(raw?.shelfIndex) || 0));
+  const inventory = Array.isArray(raw?.inventory)
+    ? raw.inventory.slice(0, 100).map(row => ({
+        name: String(row?.name || 'Вещь').slice(0, 80),
+        qty: Math.max(1, Math.min(999, Number(row?.qty) || 1))
+      }))
+    : [];
+  const photo = raw?.photo == null || raw.photo === '' ? null : String(raw.photo).slice(0, 500000);
+  return {
+    id,
+    cid,
+    modelId: String(raw?.modelId || 'custom_cargo').slice(0, 40),
+    kind: raw?.kind || cargoKind(raw?.modelId),
+    name: String(raw?.name || 'Предмет').slice(0, 80),
+    w: Number(raw.w),
+    d: Number(raw.d),
+    h: Number(raw.h),
+    color: raw?.color || '#64748b',
+    shelfIndex: si,
+    order: Math.max(0, Number(raw?.order) || 0),
+    inventory,
+    photo
+  };
+}
+
+function findCargo(rack, cargoId) {
+  return (rack?.contents || []).find(c => c.id === cargoId || String(c.cid) === String(cargoId));
+}
+
+function reindexShelfOrders(rack, shelfIndex) {
+  shelfCargo(rack, shelfIndex).forEach((c, i) => { c.order = i; });
+}
+
+function cargoThumbSvg(m) {
+  const fill = m.color || '#94a3b8';
+  if (m.id === 'tire_r18' || cargoKind(m.id) === 'tire') {
+    return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="#111827" stroke="#4b5563" stroke-width="2"/><circle cx="22" cy="22" r="8" fill="#e5e7eb"/><circle cx="22" cy="22" r="3" fill="#6b7280"/></svg>`;
+  }
+  return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+    <rect x="6" y="12" width="32" height="26" rx="3" fill="${fill}" fill-opacity=".55" stroke="${fill}" stroke-width="1.5"/>
+    <rect x="5" y="8" width="34" height="7" rx="2" fill="${fill}" stroke="#0f172a33" stroke-width="1"/>
+    <rect x="10" y="20" width="18" height="10" rx="1" fill="#fff" fill-opacity=".35"/>
+  </svg>`;
+}
 
 function snapShelfZ(z, brand) {
   const n = Math.round(Number(z) || 0);
@@ -143,7 +220,11 @@ function ensureShelfLayout(item) {
     item.shelfZs = item.shelfZs.map(z => Math.min(item.h - SHELF_PLATE, Math.max(SHELF_PLATE, z)));
   }
   if (!Array.isArray(item.contents)) item.contents = [];
-  for (const c of item.contents) c.shelfIndex = Math.max(0, Math.min(n - 1, Number(c.shelfIndex) || 0));
+  item.contents = item.contents.map(c => {
+    const normalized = normalizeCargo(c, n);
+    return normalized;
+  });
+  for (let s = 0; s < n; s++) reindexShelfOrders(item, s);
   activeShelfIndex = Math.max(0, Math.min(n - 1, activeShelfIndex));
   return item;
 }
@@ -156,7 +237,9 @@ function shelfClearance(item, shelfIndex) {
 }
 
 function shelfCargo(item, shelfIndex) {
-  return (item.contents || []).filter(c => c.shelfIndex === shelfIndex);
+  return (item.contents || [])
+    .filter(c => c.shelfIndex === shelfIndex)
+    .sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.id).localeCompare(String(b.id)));
 }
 
 function shelfIssues(item) {
@@ -283,22 +366,16 @@ function addCargoToRack(rackUid, modelId, shelfIndex) {
   ensureShelfLayout(rack);
   const idx = Math.max(0, Math.min(rack.shelves - 1, Number(shelfIndex ?? activeShelfIndex) || 0));
   if ((rack.contents || []).length >= 40) { toast('На одном стеллаже не более 40 предметов'); return; }
-  rack.contents.push({
-    cid: nextCargoId++,
-    modelId: m.id,
-    name: m.name,
-    w: m.w,
-    d: m.d,
-    h: m.h,
-    color: m.color,
-    shelfIndex: idx
-  });
+  const order = shelfCargo(rack, idx).length;
+  const cargo = makeCargoInstance(m, idx, order);
+  rack.contents.push(cargo);
   activeShelfIndex = idx;
   selectedId = rackUid;
+  selectedCargoId = cargo.id;
   refreshAll();
   const clear = shelfClearance(rack, idx);
-  if (m.h > clear) toast(`Добавлено на полку ${idx + 1}, но высоты ${m.h} мм не хватает (просвет ${clear} мм)`);
-  else toast(`Добавлено на полку ${idx + 1}`);
+  if (m.h > clear) toast(`${cargo.id}: добавлено на полку ${idx + 1}, но высоты ${m.h} мм не хватает (просвет ${clear} мм)`);
+  else toast(`${cargo.id}: на полку ${idx + 1}`);
 }
 
 function applyPreset(presetName) {
@@ -306,6 +383,7 @@ function applyPreset(presetName) {
   nextUid = 1;
   nextCargoId = 1;
   activeShelfIndex = 0;
+  selectedCargoId = null;
   if (presetName === 'se_bike') {
     addItem('se_900_500','top',550);
     addItem('se_1200_500','left',40);
@@ -366,16 +444,29 @@ function renderCatalog() {
     ensureShelfLayout(rack);
     activeShelfIndex = Math.max(0, Math.min(rack.shelves - 1, activeShelfIndex));
     container.innerHTML = `
-      <div class="note" style="margin-bottom:8px">Стеллаж №${rack.uid}: полка <b>${activeShelfIndex + 1}</b> из ${rack.shelves}, просвет ${shelfClearance(rack, activeShelfIndex)} мм</div>
-      <div class="wall-add-btns" style="margin-bottom:10px">${rack.shelfZs.map((z, i) => `
-        <button style="${i===activeShelfIndex?'background:#2563eb;color:#fff;':''}" onclick="selectShelfIndex(${i})">Полка ${i + 1}<br><span style="font-weight:400">${z} мм</span></button>
-      `).join('')}</div>
+      <div class="shelf-panel" style="margin:0 0 10px">
+        <div class="shelf-panel-head">
+          <div>
+            <div class="shelf-panel-title">Стеллаж №${rack.uid}</div>
+            <div class="note">Куда кладём: полка ${activeShelfIndex + 1}, просвет ${shelfClearance(rack, activeShelfIndex)} мм</div>
+          </div>
+        </div>
+        <div class="shelf-chip-row">${rack.shelfZs.map((z, i) => `
+          <button type="button" class="shelf-chip${i===activeShelfIndex?' active':''}" onclick="selectShelfIndex(${i})">
+            <span class="shelf-chip-title">Полка ${i + 1}</span>
+            <span class="shelf-chip-meta">${z} мм</span>
+          </button>`).join('')}
+        </div>
+      </div>
       ${list.map(m => `
         <div class="catalog-item">
           <div class="catalog-item-top">
-            <div>
-              <div class="catalog-item-name">${m.name}</div>
-              <div class="catalog-item-sub">Нужен просвет ≥ ${m.h} мм • основание ${m.w}×${m.d}</div>
+            <div style="display:flex;gap:10px;align-items:center">
+              ${cargoThumbSvg(m)}
+              <div>
+                <div class="catalog-item-name">${m.name}</div>
+                <div class="catalog-item-sub">Нужен просвет ≥ ${m.h} мм • основание ${m.w}×${m.d}</div>
+              </div>
             </div>
             <div class="catalog-item-price">На полку</div>
           </div>
@@ -493,40 +584,67 @@ function renderShelfInspector(item) {
   ensureShelfLayout(item);
   const issues = shelfIssues(item);
   const cargoCount = (item.contents || []).length;
-  return `
-    <fieldset style="margin:10px 0;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px">
-      <legend>Полки и вещи</legend>
-      <label class="inspector-row">Число полок (2–8)
-        <input type="number" aria-label="shelves" min="${SHELF_MIN}" max="${SHELF_MAX}" value="${item.shelves}" onchange="setShelfCount(${item.uid}, this.value)">
-      </label>
-      <div class="wall-add-btns" style="margin:6px 0">
-        <button onclick="redistributeShelves(${item.uid})">Равномерно · шаг 25 мм</button>
-        <button onclick="openCargoCatalog()">Каталог «На полку»</button>
+  const active = Math.max(0, Math.min(item.shelves - 1, activeShelfIndex));
+  const clear = shelfClearance(item, active);
+  const cargo = shelfCargo(item, active);
+  const shelfChips = item.shelfZs.map((z, i) => {
+    const n = shelfCargo(item, i).length;
+    const bad = shelfCargo(item, i).some(c => c.h > shelfClearance(item, i));
+    return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" onclick="selectShelfIndex(${i})">
+      <span class="shelf-chip-title">Полка ${i + 1}</span>
+      <span class="shelf-chip-meta">${z} мм · ${n || 'пусто'}${bad?' · !':''}</span>
+    </button>`;
+  }).join('');
+  const cargoCards = cargo.map(c => {
+    const sel = selectedCargoId === c.id;
+    const fits = c.h <= clear;
+    const shelfOpts = item.shelfZs.map((_, s) => `<option value="${s}" ${s===c.shelfIndex?'selected':''}>→ полка ${s + 1}</option>`).join('');
+    return `<article class="cargo-card${sel?' selected':''}${fits?'':' problem'}" onclick="selectCargo('${c.id}')">
+      <div class="cargo-card-main">
+        ${cargoThumbSvg({id:c.modelId,color:c.color})}
+        <div class="cargo-card-text">
+          <div class="cargo-card-top"><span class="cargo-id">${c.id}</span>${fits?'':'<span class="cargo-flag">не влезает</span>'}</div>
+          <div class="cargo-card-name">${c.name}</div>
+          <div class="cargo-card-meta">${c.w}×${c.d}×${c.h} мм</div>
+        </div>
       </div>
-      <div class="note">Высота — верх полки от низа стеллажа. У SE шаг отверстий 25 мм. Предметов: ${cargoCount}.</div>
-      ${item.shelfZs.map((z, i) => {
-        const clear = shelfClearance(item, i);
-        const cargo = shelfCargo(item, i);
-        const active = i === activeShelfIndex;
-        return `<div style="border-top:1px solid #e2e8f0;padding:8px 0;${active?'background:#eff6ff;margin:0 -6px;padding:8px 6px;border-radius:6px':''}">
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button class="btn" style="margin:0;${active?'background:#2563eb;color:#fff':''}" onclick="selectShelfIndex(${i})">Полка ${i + 1}</button>
-            <label class="inspector-row" style="flex:1;margin:0">Высота, мм
-              <input type="number" aria-label="shelf-z-${i}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${item.brand==='SE 750кг'?SHELF_STEP:1}" value="${z}" onchange="setShelfZ(${item.uid}, ${i}, this.value)">
-            </label>
-          </div>
-          <div class="note">Просвет сверху: <b>${clear} мм</b>${cargo.length?` · вещей: ${cargo.length}`:''}</div>
-          ${cargo.map(c => `
-            <div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:12px">
-              <span style="flex:1">${c.name} (${c.h} мм)${c.h>clear?' ⚠':''}</span>
-              <button class="btn" style="margin:0;padding:4px 8px" onclick="editCargoSize(${item.uid}, ${c.cid})">Размер</button>
-              <button class="btn danger" style="margin:0;padding:4px 8px" onclick="removeCargo(${item.uid}, ${c.cid})">✕</button>
-            </div>
-          `).join('') || '<div class="note">Пусто — добавьте из вкладки «На полку»</div>'}
-        </div>`;
-      }).join('')}
-      ${issues.length?issues.map(t=>`<div class="warn">${t}</div>`).join(''):(cargoCount?`<div class="ok">Все предметы помещаются по высоте и ширине полок.</div>`:'')}
-    </fieldset>`;
+      <div class="cargo-card-actions" onclick="event.stopPropagation()">
+        <button type="button" class="btn icon" title="Левее на полке" aria-label="Левее" onclick="reorderCargo(${item.uid}, '${c.id}', -1)">←</button>
+        <button type="button" class="btn icon" title="Правее на полке" aria-label="Правее" onclick="reorderCargo(${item.uid}, '${c.id}', 1)">→</button>
+        <select class="cargo-shelf-select" aria-label="Перенести ${c.id}" onchange="moveCargoToShelf(${item.uid}, '${c.id}', this.value)">${shelfOpts}</select>
+        <button type="button" class="btn" onclick="editCargoSize(${item.uid}, '${c.id}')">Размер</button>
+        <button type="button" class="btn danger icon" title="Удалить" aria-label="Удалить ${c.id}" onclick="removeCargo(${item.uid}, '${c.id}')">✕</button>
+      </div>
+    </article>`;
+  }).join('');
+  return `
+    <section class="shelf-panel">
+      <div class="shelf-panel-head">
+        <div>
+          <div class="shelf-panel-title">Полки и вещи</div>
+          <div class="note">${item.shelves} полок · ${cargoCount} вещей${issues.length?` · ${issues.length} проблем`:''}</div>
+        </div>
+        <button type="button" class="btn primary" onclick="openCargoCatalog()">+ Вещь</button>
+      </div>
+      <div class="shelf-toolbar">
+        <label class="inspector-row shelf-count">Полок
+          <input type="number" aria-label="shelves" min="${SHELF_MIN}" max="${SHELF_MAX}" value="${item.shelves}" onchange="setShelfCount(${item.uid}, this.value)">
+        </label>
+        <button type="button" class="btn" onclick="redistributeShelves(${item.uid})">Выровнять высоты</button>
+      </div>
+      <div class="shelf-chip-row" role="tablist" aria-label="Полки стеллажа">${shelfChips}</div>
+      <div class="shelf-active">
+        <label class="inspector-row">Высота полки ${active + 1}, мм от низа
+          <input type="number" aria-label="shelf-z-${active}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${item.brand==='SE 750кг'?SHELF_STEP:1}" value="${item.shelfZs[active]}" onchange="setShelfZ(${item.uid}, ${active}, this.value)">
+        </label>
+        <div class="note">Просвет до следующей полки / верха: <b>${clear} мм</b>${item.brand==='SE 750кг'?' · шаг 25 мм':''}</div>
+      </div>
+      <div class="cargo-list">
+        ${cargoCards || `<div class="cargo-empty">На этой полке пусто.<br><button type="button" class="btn primary" onclick="openCargoCatalog()">Добавить из каталога</button></div>`}
+      </div>
+      ${issues.length?`<div class="warn">${issues[0]}${issues.length>1?` (+ ещё ${issues.length-1})`:''}</div>`:(cargoCount?`<div class="ok">По высоте и ширине всё помещается.</div>`:'')}
+      <div class="note">У каждой вещи свой ID. Список содержимого и фото коробки — следующим шагом.</div>
+    </section>`;
 }
 
 function setShelfCount(uid, value) {
@@ -558,17 +676,25 @@ function redistributeShelves(uid) {
   toast('Высоты полок выровнены');
 }
 
-function removeCargo(rackUid, cid) {
+function removeCargo(rackUid, cargoId) {
   const rack = items.find(i => i.uid === rackUid);
-  if (!rack?.contents) return;
-  rack.contents = rack.contents.filter(c => c.cid !== cid);
+  if (!isShelfRack(rack)) return;
+  ensureShelfLayout(rack);
+  const victim = findCargo(rack, cargoId);
+  if (!victim) return;
+  rack.contents = rack.contents.filter(c => c.id !== victim.id);
+  reindexShelfOrders(rack, victim.shelfIndex);
+  if (selectedCargoId === cargoId || selectedCargoId === victim.id) selectedCargoId = null;
   refreshAll();
 }
 
-function editCargoSize(rackUid, cid) {
+function editCargoSize(rackUid, cargoId) {
   const rack = items.find(i => i.uid === rackUid);
-  const cargo = rack?.contents?.find(c => c.cid === cid);
+  if (!isShelfRack(rack)) return;
+  ensureShelfLayout(rack);
+  const cargo = findCargo(rack, cargoId);
   if (!cargo) return;
+  selectedCargoId = cargo.id;
   const w = prompt('Ширина предмета, мм', String(cargo.w));
   if (w == null) return;
   const d = prompt('Глубина предмета, мм', String(cargo.d));
@@ -578,7 +704,55 @@ function editCargoSize(rackUid, cid) {
   const nw = Math.round(Number(w)), nd = Math.round(Number(d)), nh = Math.round(Number(h));
   if (![nw, nd, nh].every(n => Number.isFinite(n) && n >= 1 && n <= 3000)) { toast('Некорректные размеры'); return; }
   cargo.w = nw; cargo.d = nd; cargo.h = nh;
-  cargo.name = `Свой предмет ${nw}×${nd}×${nh}`;
+  if (cargo.modelId === 'custom_cargo' || cargo.kind === 'box') cargo.name = `Свой предмет ${nw}×${nd}×${nh}`;
+  refreshAll();
+}
+
+function selectCargo(cargoId) {
+  selectedCargoId = cargoId;
+  const rack = items.find(i => isShelfRack(i) && findCargo(i, cargoId));
+  if (rack) {
+    selectedId = rack.uid;
+    const c = findCargo(rack, cargoId);
+    if (c) activeShelfIndex = c.shelfIndex;
+  }
+  refreshAll();
+}
+
+function moveCargoToShelf(rackUid, cargoId, shelfIndex) {
+  const rack = items.find(i => i.uid === rackUid);
+  if (!isShelfRack(rack)) return;
+  ensureShelfLayout(rack);
+  const cargo = findCargo(rack, cargoId);
+  if (!cargo) return;
+  const to = Math.max(0, Math.min(rack.shelves - 1, Number(shelfIndex)));
+  const from = cargo.shelfIndex;
+  if (to === from) return;
+  cargo.shelfIndex = to;
+  cargo.order = shelfCargo(rack, to).filter(c => c.id !== cargo.id).length;
+  reindexShelfOrders(rack, from);
+  reindexShelfOrders(rack, to);
+  activeShelfIndex = to;
+  selectedCargoId = cargo.id;
+  refreshAll();
+  toast(`${cargo.id} → полка ${to + 1}`);
+}
+
+function reorderCargo(rackUid, cargoId, direction) {
+  const rack = items.find(i => i.uid === rackUid);
+  if (!isShelfRack(rack)) return;
+  ensureShelfLayout(rack);
+  const cargo = findCargo(rack, cargoId);
+  if (!cargo) return;
+  const list = shelfCargo(rack, cargo.shelfIndex);
+  const idx = list.findIndex(c => c.id === cargo.id);
+  const swapWith = idx + (direction < 0 ? -1 : 1);
+  if (idx < 0 || swapWith < 0 || swapWith >= list.length) return;
+  const a = list[idx].order, b = list[swapWith].order;
+  list[idx].order = b;
+  list[swapWith].order = a;
+  reindexShelfOrders(rack, cargo.shelfIndex);
+  selectedCargoId = cargo.id;
   refreshAll();
 }
 
@@ -858,7 +1032,7 @@ function onSvgPointerUp() {
 // 4. WebGL uses the same object rectangles as the SVG plan.
 function render3D(){ if(window.renderWebGL) window.renderWebGL(); }
 function init3DEvents(){}
-window.plannerState=()=>({items,selectedId,ceilingHeight,wallOpacity,getItemRect,DOOR});
+window.plannerState=()=>({items,selectedId,selectedCargoId,ceilingHeight,wallOpacity,getItemRect,DOOR});
 window.DOOR=DOOR;
 window.selectPlannerItem=uid=>{selectedId=uid;refreshAll();};
 function updateHeaderSummary() {
@@ -1011,7 +1185,7 @@ function updateAnalysis(){
  for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
 function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));if(isShelfRack(item)&&key==='h')ensureShelfLayout(item);refreshAll();}
-function snapshot(){return {version:1,bikeMeasurements:2,shelfLayout:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150,shelves:i.shelves||0,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.map(Number):undefined,contents:Array.isArray(i.contents)?i.contents.map(c=>({cid:c.cid,modelId:c.modelId,name:c.name,w:c.w,d:c.d,h:c.h,color:c.color,shelfIndex:c.shelfIndex})):[]}))};}
+function snapshot(){return {version:1,bikeMeasurements:2,shelfLayout:1,cargoIds:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150,shelves:i.shelves||0,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.map(Number):undefined,contents:Array.isArray(i.contents)?i.contents.map(c=>({id:c.id,cid:c.cid,modelId:c.modelId,kind:c.kind,name:c.name,w:c.w,d:c.d,h:c.h,color:c.color,shelfIndex:c.shelfIndex,order:c.order||0,inventory:Array.isArray(c.inventory)?c.inventory:[],photo:c.photo??null})):[]}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
@@ -1038,8 +1212,9 @@ function loadSnapshot(data){
     for(const c of r.contents){
      const cw=Number(c.w),cd=Number(c.d),ch=Number(c.h),si=Number(c.shelfIndex??0);
      if(![cw,cd,ch].every(n=>Number.isFinite(n)&&n>=1&&n<=3000)||!Number.isFinite(si)||si<0||si>=shelfN)throw Error('Некорректный предмет на полке.');
-     i.contents.push({cid:Number(c.cid)||nextCargoId++,modelId:c.modelId||'custom_cargo',name:String(c.name||'Предмет').slice(0,80),w:cw,d:cd,h:ch,color:c.color||'#64748b',shelfIndex:si});
+     i.contents.push(normalizeCargo({...c,w:cw,d:cd,h:ch,shelfIndex:si},shelfN));
     }
+    for(let s=0;s<shelfN;s++)reindexShelfOrders(i,s);
    }
    ensureShelfLayout(i);
   }
@@ -1047,8 +1222,8 @@ function loadSnapshot(data){
  });
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');
  items=parsed;ceilingHeight=h;nextUid=items.length+1;
- nextCargoId=Math.max(1,...items.flatMap(i=>(i.contents||[]).map(c=>c.cid+1)),1);
- selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
+ nextCargoId=Math.max(1,...items.flatMap(i=>(i.contents||[]).map(c=>Number(c.cid)+1||1)),1);
+ selectedId=null;selectedCargoId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
 async function restorePlan(){try{if(location.hash.startsWith('#planz=')){loadSnapshot(await decodeCompressedPlan(location.hash.slice(7)));return true;}if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
@@ -1063,7 +1238,33 @@ function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.
 function bikeHeading(i){const base=i.bikeMode==='vert'?(i.wall==='top'?90:0):(i.wall==='top'?0:90);return (base+(i.rotation||0))%360;}
 window.bikeHeading=bikeHeading;
 function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();const old=getItemRect(i);i.rotation=((i.rotation||0)+90)%360;if(i.free){const next=getItemRect(i);i.x=old.x+(old.width-next.width)/2;i.y=old.y+(old.height-next.height)/2;}selectedId=uid;refreshAll();}
-function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.slice():null,contents:Array.isArray(i.contents)?i.contents.map(c=>({...c,cid:nextCargoId++})):[]};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}if(isShelfRack(copy))ensureShelfLayout(copy);items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
+function duplicateItem(uid){
+  const i = items.find(i => i.uid === uid); if (!i) return;
+  if (items.length >= 100) { toast('В проекте не более 100 объектов'); return; }
+  closeObjectMenu();
+  const copy = {
+    ...i,
+    uid: nextUid++,
+    offset: i.offset + placedSize(i).w + 20,
+    shelfZs: Array.isArray(i.shelfZs) ? i.shelfZs.slice() : null,
+    contents: Array.isArray(i.contents) ? i.contents.map(c => {
+      const n = nextCargoId++;
+      return {
+        ...c,
+        cid: n,
+        id: `c_${n}`,
+        inventory: Array.isArray(c.inventory) ? c.inventory.map(x => ({ ...x })) : [],
+        photo: c.photo ?? null
+      };
+    }) : []
+  };
+  const max = WALL_INFO[i.wall].maxLen - placedSize(i).w;
+  if (copy.offset > max) copy.offset = Math.max(0, i.offset - placedSize(i).w - 20);
+  if (copy.free) { copy.x = (i.x || 0) + 100; copy.y = (i.y || 0) + 100; }
+  if (isShelfRack(copy)) ensureShelfLayout(copy);
+  items.push(copy); selectedId = copy.uid; refreshAll();
+  toast('Копия создана. Проверьте пересечения и отступы.');
+}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
 function placeObjectMenu(menu,x,y){
   document.body.append(menu);
@@ -1129,6 +1330,8 @@ window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.makeSeModel=makeSeM
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
+window.selectCargo=selectCargo;window.moveCargoToShelf=moveCargoToShelf;window.reorderCargo=reorderCargo;
+window.findCargo=findCargo;window.makeCargoInstance=makeCargoInstance;
 window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;
 window.defaultShelfZs=defaultShelfZs;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
