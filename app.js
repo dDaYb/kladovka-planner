@@ -51,12 +51,18 @@ CATALOG.ski = [
 ];
 CATALOG.ladder = [{id:'ladder_folded',brand:'Стремянка',name:'Стремянка сложенная',isLadder:true,w:500,d:120,h:1800,shelves:0,price:0,color:'#0891b2'}];
 // Предметы только на полки стеллажа (не ставятся на пол комнаты).
+// Короба — пластиковые из Fix Price / Fimako (габариты с карточек товара; цвет по объёму).
 CATALOG.cargo = [
-  {id:'box_s', brand:'На полку', isCargo:true, name:'Короб малый 400×300×250', w:400, d:300, h:250, price:0, color:'#ca8a04'},
-  {id:'box_m', brand:'На полку', isCargo:true, name:'Короб средний 600×400×350', w:600, d:400, h:350, price:0, color:'#a16207'},
-  {id:'box_l', brand:'На полку', isCargo:true, name:'Короб большой 700×500×450', w:700, d:500, h:450, price:0, color:'#854d0e'},
-  {id:'bin_flat', brand:'На полку', isCargo:true, name:'Ящик низкий 500×350×150', w:500, d:350, h:150, price:0, color:'#0f766e'},
-  {id:'bin_tall', brand:'На полку', isCargo:true, name:'Ящик высокий 400×300×450', w:400, d:300, h:450, price:0, color:'#115e59'},
+  {id:'fix_3l', brand:'На полку', isCargo:true, name:'Fix Price 3,3 л · 240×170×120', w:240, d:170, h:120, price:0, color:'#67e8f9'},
+  {id:'fix_5l', brand:'На полку', isCargo:true, name:'Fix Price 5 л · 305×168×129', w:305, d:168, h:129, price:0, color:'#5eead4'},
+  {id:'fix_6l', brand:'На полку', isCargo:true, name:'Fix Price SMART BOX 6 л · 300×193×170', w:300, d:193, h:170, price:0, color:'#2dd4bf'},
+  {id:'fix_6sq', brand:'На полку', isCargo:true, name:'Fix Price мультибокс 6 л · 250×240×140', w:250, d:240, h:140, price:0, color:'#34d399'},
+  {id:'fix_10l', brand:'На полку', isCargo:true, name:'Fix Price Майбокс 10 л · 360×250×140', w:360, d:250, h:140, price:0, color:'#4ade80'},
+  {id:'fix_18l', brand:'На полку', isCargo:true, name:'Fix Price Fimako 18 л · 395×295×200', w:395, d:295, h:200, price:0, color:'#60a5fa'},
+  {id:'fix_32l', brand:'На полку', isCargo:true, name:'Fix Price на колёсах 32 л · 470×360×250', w:470, d:360, h:250, price:0, color:'#818cf8'},
+  {id:'fix_35l', brand:'На полку', isCargo:true, name:'Fix Price корзина 35 л · 530×360×250', w:530, d:360, h:250, price:0, color:'#c084fc'},
+  // R18: типовой легковой 225/45R18 ≈ Ø660 × ширина 225; стоит на протекторе.
+  {id:'tire_r18', brand:'На полку', isCargo:true, name:'Шина R18 · Ø≈660 × 225', w:660, d:225, h:660, price:0, color:'#1f2937'},
   {id:'suitcase', brand:'На полку', isCargo:true, name:'Чемодан 750×450×280', w:750, d:450, h:280, price:0, color:'#1d4ed8'},
   {id:'canister', brand:'На полку', isCargo:true, name:'Канистра 350×200×400', w:350, d:200, h:400, price:0, color:'#b45309'},
   {id:'custom_cargo', brand:'На полку', isCargo:true, name:'Свой предмет 400×300×300', w:400, d:300, h:300, price:0, color:'#64748b'}
