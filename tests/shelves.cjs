@@ -15,7 +15,7 @@ const assert=require('node:assert/strict');
  assert.deepEqual(await page.evaluate(()=>[items[0].shelves,items[0].shelfZs.length]),[4,4]);
  await page.evaluate(id=>{setShelfZ(id,1,900);},rackId);
  assert.equal(await page.evaluate(()=>items[0].shelfZs[1]%25),0);
- await page.evaluate(id=>{activeShelfIndex=1;addCargoToRack(id,'box_m',1);},rackId);
+ await page.evaluate(id=>{activeShelfIndex=1;addCargoToRack(id,'fix_18l',1);},rackId);
  assert.equal(await page.evaluate(()=>items[0].contents.length),1);
  assert.equal(await page.evaluate(()=>items[0].contents[0].shelfIndex),1);
  const clear=await page.evaluate(()=>shelfClearance(items[0],1));
