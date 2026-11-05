@@ -432,49 +432,64 @@ function switchCatalogTab(tab, btnEl) {
   renderCatalog();
 }
 
+function shelfWidthUsed(item, shelfIndex) {
+  return shelfCargo(item, shelfIndex).reduce((s, c) => s + (c.w || 0), 0);
+}
+
 function renderCatalog() {
   const container = document.getElementById('catalogList');
   const list = CATALOG[currentCatalogTab] || [];
   if (currentCatalogTab === 'cargo') {
     const rack = items.find(i => i.uid === selectedId && isShelfRack(i));
     if (!rack) {
-      container.innerHTML = '<div class="note">Выберите стеллаж на плане, затем добавьте предметы на его полки. Цель — понять, сколько полок и какой просвет нужны.</div>';
+      container.innerHTML = '<div class="cargo-empty">Выберите стеллаж на 2D-плане.<br><span class="note">Потом сюда добавляют коробки и шины — чтобы понять число полок и нужный просвет.</span></div>';
       return;
     }
     ensureShelfLayout(rack);
     activeShelfIndex = Math.max(0, Math.min(rack.shelves - 1, activeShelfIndex));
+    const clear = shelfClearance(rack, activeShelfIndex);
+    const used = shelfWidthUsed(rack, activeShelfIndex);
+    const left = Math.max(0, rack.w - used);
     container.innerHTML = `
       <div class="shelf-panel" style="margin:0 0 10px">
         <div class="shelf-panel-head">
           <div>
             <div class="shelf-panel-title">Стеллаж №${rack.uid}</div>
-            <div class="note">Куда кладём: полка ${activeShelfIndex + 1}, просвет ${shelfClearance(rack, activeShelfIndex)} мм</div>
+            <div class="note">Полка ${activeShelfIndex + 1}: просвет ${clear} мм · свободно ${left} из ${rack.w} мм</div>
           </div>
         </div>
+        <div class="shelf-fill" aria-hidden="true"><span style="width:${Math.min(100, Math.round(used / Math.max(1, rack.w) * 100))}%"></span></div>
         <div class="shelf-chip-row">${rack.shelfZs.map((z, i) => `
           <button type="button" class="shelf-chip${i===activeShelfIndex?' active':''}" onclick="selectShelfIndex(${i})">
             <span class="shelf-chip-title">Полка ${i + 1}</span>
-            <span class="shelf-chip-meta">${z} мм</span>
+            <span class="shelf-chip-meta">${z} мм · ${shelfCargo(rack, i).length || 'пусто'}</span>
           </button>`).join('')}
         </div>
       </div>
-      ${list.map(m => `
-        <div class="catalog-item">
+      ${list.map(m => {
+        const tall = m.h > clear;
+        const wide = m.w > left;
+        const deep = m.d > rack.d;
+        const ok = !tall && !wide && !deep;
+        const tip = ok ? 'Влезает' : [tall && `нужен просвет ≥ ${m.h}`, wide && `ширина ${m.w} > свободно ${left}`, deep && `глубина ${m.d} > ${rack.d}`].filter(Boolean).join(' · ');
+        return `
+        <div class="catalog-item${ok?'':' catalog-item-tight'}">
           <div class="catalog-item-top">
             <div style="display:flex;gap:10px;align-items:center">
               ${cargoThumbSvg(m)}
               <div>
                 <div class="catalog-item-name">${m.name}</div>
-                <div class="catalog-item-sub">Нужен просвет ≥ ${m.h} мм • основание ${m.w}×${m.d}</div>
+                <div class="catalog-item-sub">${m.w}×${m.d}×${m.h} мм</div>
               </div>
             </div>
-            <div class="catalog-item-price">На полку</div>
+            <span class="fit-badge ${ok?'fit-ok':'fit-warn'}">${ok?'влезает':'тесно'}</span>
           </div>
+          <div class="note" style="margin:4px 0 6px">${tip}</div>
           <div class="wall-add-btns">
-            <button onclick="addCargoToRack(${rack.uid}, '${m.id}', ${activeShelfIndex})">+ На полку ${activeShelfIndex + 1}</button>
+            <button class="btn ${ok?'primary':''}" onclick="addCargoToRack(${rack.uid}, '${m.id}', ${activeShelfIndex})">+ На полку ${activeShelfIndex + 1}</button>
           </div>
-        </div>
-      `).join('')}`;
+        </div>`;
+      }).join('')}`;
     return;
   }
   container.innerHTML = list.map(m => `
@@ -587,19 +602,22 @@ function renderShelfInspector(item) {
   const active = Math.max(0, Math.min(item.shelves - 1, activeShelfIndex));
   const clear = shelfClearance(item, active);
   const cargo = shelfCargo(item, active);
+  const used = shelfWidthUsed(item, active);
+  const fillPct = Math.min(100, Math.round(used / Math.max(1, item.w) * 100));
+  const fillOver = used > item.w;
   const shelfChips = item.shelfZs.map((z, i) => {
     const n = shelfCargo(item, i).length;
-    const bad = shelfCargo(item, i).some(c => c.h > shelfClearance(item, i));
-    return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" onclick="selectShelfIndex(${i})">
+    const bad = shelfCargo(item, i).some(c => c.h > shelfClearance(item, i)) || shelfWidthUsed(item, i) > item.w;
+    return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" onclick="selectShelfIndex(${i})" role="tab" aria-selected="${i===active}">
       <span class="shelf-chip-title">Полка ${i + 1}</span>
       <span class="shelf-chip-meta">${z} мм · ${n || 'пусто'}${bad?' · !':''}</span>
     </button>`;
   }).join('');
-  const cargoCards = cargo.map(c => {
+  const cargoCards = cargo.map((c, idx) => {
     const sel = selectedCargoId === c.id;
-    const fits = c.h <= clear;
+    const fits = c.h <= clear && c.d <= item.d;
     const shelfOpts = item.shelfZs.map((_, s) => `<option value="${s}" ${s===c.shelfIndex?'selected':''}>→ полка ${s + 1}</option>`).join('');
-    return `<article class="cargo-card${sel?' selected':''}${fits?'':' problem'}" onclick="selectCargo('${c.id}')">
+    return `<article class="cargo-card${sel?' selected':''}${fits?'':' problem'}" data-cargo-id="${c.id}" onclick="selectCargo('${c.id}')" tabindex="0" aria-selected="${sel}">
       <div class="cargo-card-main">
         ${cargoThumbSvg({id:c.modelId,color:c.color})}
         <div class="cargo-card-text">
@@ -608,13 +626,14 @@ function renderShelfInspector(item) {
           <div class="cargo-card-meta">${c.w}×${c.d}×${c.h} мм</div>
         </div>
       </div>
-      <div class="cargo-card-actions" onclick="event.stopPropagation()">
-        <button type="button" class="btn icon" title="Левее на полке" aria-label="Левее" onclick="reorderCargo(${item.uid}, '${c.id}', -1)">←</button>
-        <button type="button" class="btn icon" title="Правее на полке" aria-label="Правее" onclick="reorderCargo(${item.uid}, '${c.id}', 1)">→</button>
+      <div class="cargo-card-actions${sel?' open':''}" onclick="event.stopPropagation()">
+        <button type="button" class="btn icon" title="Левее на полке" aria-label="Левее" ${idx===0?'disabled':''} onclick="reorderCargo(${item.uid}, '${c.id}', -1)">←</button>
+        <button type="button" class="btn icon" title="Правее на полке" aria-label="Правее" ${idx===cargo.length-1?'disabled':''} onclick="reorderCargo(${item.uid}, '${c.id}', 1)">→</button>
         <select class="cargo-shelf-select" aria-label="Перенести ${c.id}" onchange="moveCargoToShelf(${item.uid}, '${c.id}', this.value)">${shelfOpts}</select>
         <button type="button" class="btn" onclick="editCargoSize(${item.uid}, '${c.id}')">Размер</button>
         <button type="button" class="btn danger icon" title="Удалить" aria-label="Удалить ${c.id}" onclick="removeCargo(${item.uid}, '${c.id}')">✕</button>
       </div>
+      ${sel?'':'<div class="cargo-card-hint">Клик — выбрать · ← → переставить</div>'}
     </article>`;
   }).join('');
   return `
@@ -637,13 +656,13 @@ function renderShelfInspector(item) {
         <label class="inspector-row">Высота полки ${active + 1}, мм от низа
           <input type="number" aria-label="shelf-z-${active}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${item.brand==='SE 750кг'?SHELF_STEP:1}" value="${item.shelfZs[active]}" onchange="setShelfZ(${item.uid}, ${active}, this.value)">
         </label>
-        <div class="note">Просвет до следующей полки / верха: <b>${clear} мм</b>${item.brand==='SE 750кг'?' · шаг 25 мм':''}</div>
+        <div class="note">Просвет: <b>${clear} мм</b> · ширина занята <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':''}</div>
+        <div class="shelf-fill${fillOver?' over':''}" role="meter" aria-valuemin="0" aria-valuemax="${item.w}" aria-valuenow="${used}" aria-label="Занятость полки по ширине"><span style="width:${fillPct}%"></span></div>
       </div>
       <div class="cargo-list">
         ${cargoCards || `<div class="cargo-empty">На этой полке пусто.<br><button type="button" class="btn primary" onclick="openCargoCatalog()">Добавить из каталога</button></div>`}
       </div>
       ${issues.length?`<div class="warn">${issues[0]}${issues.length>1?` (+ ещё ${issues.length-1})`:''}</div>`:(cargoCount?`<div class="ok">По высоте и ширине всё помещается.</div>`:'')}
-      <div class="note">У каждой вещи свой ID. Список содержимого и фото коробки — следующим шагом.</div>
     </section>`;
 }
 
@@ -1034,7 +1053,21 @@ function render3D(){ if(window.renderWebGL) window.renderWebGL(); }
 function init3DEvents(){}
 window.plannerState=()=>({items,selectedId,selectedCargoId,ceilingHeight,wallOpacity,getItemRect,DOOR});
 window.DOOR=DOOR;
-window.selectPlannerItem=uid=>{selectedId=uid;refreshAll();};
+window.selectPlannerItem=(uid, cargoId)=>{
+  selectedId=uid;
+  if (cargoId) selectedCargoId = cargoId;
+  else if (selectedCargoId) {
+    const rack = items.find(i => i.uid === uid && isShelfRack(i));
+    if (!rack || !findCargo(rack, selectedCargoId)) selectedCargoId = null;
+  }
+  if (selectedCargoId) {
+    const rack = items.find(i => i.uid === uid && isShelfRack(i));
+    const c = rack && findCargo(rack, selectedCargoId);
+    if (c) activeShelfIndex = c.shelfIndex;
+  }
+  refreshAll();
+};
+window.selectPlannerCargo=(uid, cargoId)=>window.selectPlannerItem(uid, cargoId);
 function updateHeaderSummary() {
   const total = items.reduce((sum, i) => sum + (i.price || 0), 0);
   document.getElementById('headerCount').textContent = `${items.length} поз.`;
@@ -1140,12 +1173,22 @@ function copyBomText() {
   navigator.clipboard.writeText(lines.join('\n')).then(()=>toast('Смета скопирована'),()=>download('kladovka-smeta.txt',lines.join('\n'),'text/plain'));
 }
 
+function focusSelectedCargoCard() {
+  if (!selectedCargoId) return;
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`.cargo-card[data-cargo-id="${selectedCargoId}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+}
+
 function refreshAll() {
   updateHeaderSummary();
   renderInspector();
+  if (currentCatalogTab === 'cargo') renderCatalog();
   render2D();
   render3D();
   updateAnalysis(); persist();
+  focusSelectedCargoCard();
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1232,7 +1275,20 @@ async function importPlan(file){if(!file)return;try{if(file.size>200000)throw Er
 async function sharePlan(){const url=location.origin+location.pathname+'#plan='+btoa(unescape(encodeURIComponent(JSON.stringify(snapshot()))));try{await navigator.clipboard.writeText(url);toast('Ссылка на текущую расстановку скопирована');}catch{download('kladovka-link.txt',url,'text/plain');toast('Ссылка сохранена в текстовом файле');}}
 function exportSvg(){const clone=document.getElementById('plan2d').cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');download('kladovka-plan.svg',new XMLSerializer().serializeToString(clone),'image/svg+xml');}
 function toast(message){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.role='status';el.textContent=message;document.body.append(el);setTimeout(()=>el.remove(),5000);}
-document.addEventListener('keydown',e=>{if((e.key==='Delete'||e.key==='Backspace')&&selectedId!=null&&!e.target.closest('input,textarea,select,[contenteditable="true"]')&&!document.getElementById('bomModal').classList.contains('open')){e.preventDefault();deleteItem(selectedId);}if(e.key==='Escape')closeBomModal();});
+document.addEventListener('keydown',e=>{
+  if(e.target.closest('input,textarea,select,[contenteditable="true"]')||document.getElementById('bomModal').classList.contains('open'))return;
+  if(e.key==='Escape'){if(selectedCargoId){selectedCargoId=null;refreshAll();return;}closeBomModal();return;}
+  if(selectedCargoId&&selectedId!=null&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){
+    e.preventDefault();
+    reorderCargo(selectedId, selectedCargoId, e.key==='ArrowLeft'?-1:1);
+    return;
+  }
+  if((e.key==='Delete'||e.key==='Backspace')&&selectedId!=null){
+    e.preventDefault();
+    if(selectedCargoId){removeCargo(selectedId, selectedCargoId);return;}
+    deleteItem(selectedId);
+  }
+});
 
 function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.d};}
 function bikeHeading(i){const base=i.bikeMode==='vert'?(i.wall==='top'?90:0):(i.wall==='top'?0:90);return (base+(i.rotation||0))%360;}
@@ -1332,7 +1388,7 @@ window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editC
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
 window.selectCargo=selectCargo;window.moveCargoToShelf=moveCargoToShelf;window.reorderCargo=reorderCargo;
 window.findCargo=findCargo;window.makeCargoInstance=makeCargoInstance;
-window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;
+window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;window.shelfWidthUsed=shelfWidthUsed;window.shelfCargo=shelfCargo;
 window.defaultShelfZs=defaultShelfZs;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
 
