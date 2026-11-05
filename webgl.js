@@ -77,7 +77,7 @@ try {
  }
  window.renderWebGL=()=>{const state=window.plannerState?.();if(!state)return;clear();const {items,getItemRect,ceilingHeight,wallOpacity,selectedId}=state;
   const shape=new THREE.Shape();[[0,0],[1468,0],[1468,1394],[1779,1394],[1779,2860],[0,2860]].forEach(([x,z],k)=>k?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();const floor=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:0xdbe4e9,side:THREE.DoubleSide}));floor.rotation.x=-Math.PI/2;contents.add(floor);
-  const H=ceilingHeight,door=state.DOOR||window.DOOR||{left:200,width:1050,height:2100,right:529,start:200,end:1250};
+  const H=ceilingHeight,door=state.DOOR||window.DOOR||{left:529,width:1050,height:2100,right:200,start:529,end:1579};
   for(const [w,dep,x,z]of[[1468,30,734,-15],[30,2860,-15,1430],[30,1394,1483,697],[311,30,1623.5,1409],[30,1466,1794,2127],[door.left,30,door.left/2,2875],[door.right,30,door.end+door.right/2,2875]])box(w,H,dep,x,H/2,z,0x9aaab8,wallOpacity);
   // Перемычка над дверью: проём высотой door.height, выше — стена до потолка
   if(H>door.height)box(door.width,H-door.height,30,(door.start+door.end)/2,door.height+(H-door.height)/2,2875,0x9aaab8,wallOpacity);

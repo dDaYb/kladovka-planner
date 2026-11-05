@@ -84,10 +84,13 @@ const WALL_INFO = {
   right_bot: { label: 'Правая низ (1466 мм)',  maxLen: 1466 }
 };
 
-// Дверь на нижней стене (вид из кладовки). Слева 200 + проём 1050 + справа обмер ≈500;
-// справа согласовано до 529 мм, чтобы замкнуть ширину 1779.
+// Дверь на нижней стене. Стороны — как изнутри кладовки, глядя на дверь:
+// слева до стены 200 мм, справа обмер ≈500 → 529 мм (200+1050+529=1779).
+// На плане дверь внизу, смотрим «от себя» на дверь → изнутри лево/право зеркальны оси X:
+// DOOR.left = отступ от x=0 (план «слева») = изнутри СПРАВА = 529;
+// DOOR.right = до x=1779 (план «справа») = изнутри СЛЕВА = 200.
 const DOOR = {
-  left: 200,
+  left: 529,
   width: 1050,
   height: 2100,
   bottomWidth: 1779,
@@ -1085,14 +1088,14 @@ function render2D() {
     <path d="M 0,0 L 1468,0 L 1468,1394 L 1779,1394 L 1779,2860 L 0,2860 Z"
           fill="none" stroke="#1e293b" stroke-width="26" stroke-linejoin="miter" pointer-events="none"/>
 
-    <!-- Дверной проем: слева ${DOOR.left}, проём ${DOOR.width}, справа ${DOOR.right}; высота ${DOOR.height} -->
+    <!-- Дверной проём на плане: отступ x0=${DOOR.left} (изнутри справа≈500), проём ${DOOR.width}, до x1779=${DOOR.right} (изнутри слева 200); высота ${DOOR.height} -->
     <line x1="${DOOR.start}" y1="2860" x2="${DOOR.end}" y2="2860" stroke="#ffffff" stroke-width="30"/>
     <line x1="${DOOR.start}" y1="2860" x2="${DOOR.end}" y2="2860" stroke="#d97706" stroke-width="10" stroke-dasharray="28,20"/>
     <text x="${(DOOR.start + DOOR.end) / 2}" y="2810" fill="#92400e" font-size="46" font-weight="bold" text-anchor="middle">Дверь ${DOOR.width} × ${DOOR.height} (с наличниками)</text>
     <g fill="#92400e" font-size="40" text-anchor="middle">
-      <text x="${DOOR.left / 2}" y="2945">${DOOR.left}</text>
+      <text x="${DOOR.left / 2}" y="2945">${DOOR.left}≈500</text>
       <text x="${(DOOR.start + DOOR.end) / 2}" y="2945">${DOOR.width}</text>
-      <text x="${DOOR.end + DOOR.right / 2}" y="2945">${DOOR.right}≈500</text>
+      <text x="${DOOR.end + DOOR.right / 2}" y="2945">${DOOR.right}</text>
     </g>
   `;
 
@@ -1558,16 +1561,20 @@ function autoArrange(){
   if(item.isBike&&item.bikeMode!=='vert'){
    for(const rotation of [0,90]){const proto={...item,free:true,wall:'top',rotation};const size=placedSize(proto);
     const xs=new Set([20,1779-size.w-20]),ys=new Set([20,2860-size.d-20]);
-    for(let x=20;x+size.w<=1779;x+=100)xs.add(x);for(let y=20;y+size.d<=2860;y+=100)ys.add(y);
+    const step=50;
+    for(let x=20;x+size.w<=1779;x+=step)xs.add(x);for(let y=20;y+size.d<=2860;y+=step)ys.add(y);
     for(const p of placed){const r=getItemRect(p);xs.add(r.x+r.width+20);xs.add(r.x-size.w-20);ys.add(r.y+r.height+20);ys.add(r.y-size.d-20);}
     for(const x of xs)for(const y of ys)out.push({...proto,x,y});
    }
   }else for(const wall of Object.keys(WALL_INFO))for(const rotation of [0,90]){const proto={...item,free:false,wall,rotation,gap:20},size=placedSize(proto),max=WALL_INFO[wall].maxLen-size.w-20;if(max<20)continue;const offsets=new Set([20,max]);for(let v=20;v<=max;v+=100)offsets.add(v);for(const p of placed){const r=getItemRect(p),start=wall==='top'?r.x:r.y-(wall==='right_bot'?1394:0),len=wall==='top'?r.width:r.height;offsets.add(start+len+20);offsets.add(start-size.w-20);}for(const offset of offsets)out.push({...proto,offset});}
   return out.filter(c=>{const r=getItemRect(c);return rectInside(r)&&!overlap(r,entrance)&&(c.z||0)+c.h<=ceilingHeight&&!placed.some(p=>overlap({x:r.x-10,y:r.y-10,width:r.width+20,height:r.height+20},getItemRect(p))&&(c.z||0)<(p.z||0)+p.h&&(p.z||0)<(c.z||0)+c.h);});
  }
- for(let trial=0;trial<28;trial++){
+ for(let trial=0;trial<48;trial++){
   const order=source.slice().sort((a,b)=>((a.isBike?1:0)-(b.isBike?1:0))||((trial%2?a.w*a.d-b.w*b.d:b.w*b.d-a.w*a.d)));
-  if(trial%4===3)order.reverse();const placed=[];let score=0;
+  if(trial%4===3)order.reverse();
+  // После сдвига двери иногда выгоднее ставить велосипед раньше стеллажей.
+  if(trial%5===4){const bi=order.findIndex(i=>i.isBike);if(bi>0)order.unshift(order.splice(bi,1)[0]);}
+  const placed=[];let score=0;
   for(const item of order){const choices=candidates(item,placed).map(c=>{const r=getItemRect(c);const edge=Math.min(r.x,Math.abs(1779-r.x-r.width));return {c,score:r.y*.2+edge*.5+(c.rotation?30:0)+(item.isBike?-r.y*.3+(r.width>1000?5000:0):0)};}).sort((a,b)=>a.score-b.score);if(!choices.length)break;const accessible=choices.filter(v=>autoReachable([...placed,v.c]));if(!accessible.length)break;const choice=accessible[Math.min(accessible.length-1,trial%4)];placed.push(choice.c);score+=choice.score;}
   if(placed.length===source.length&&autoReachable(placed)&&score<bestScore){best=placed;bestScore=score;}
  }
