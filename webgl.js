@@ -53,8 +53,20 @@ try {
    const envelope=box(r.width,item.h,r.height,cx,base+item.h/2,cz,color,(item.isBike||item.isSki)?0.12:0.035);envelope.userData.uid=item.uid;selectable.push(envelope);
    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(envelope.geometry),new THREE.LineBasicMaterial({color,transparent:true,opacity:.65}));edges.position.copy(envelope.position);contents.add(edges);
    if(item.isBike)bike(item,r);else if(item.isLadder)ladder(item,r);else if(item.isSki){const side=(item.wall!=='top')!==((item.rotation||0)%180===90);for(const k of [-1,1])box(side?30:55,item.h,side?55:30,cx+(side?0:k*45),base+item.h/2,cz+(side?k*45:0),color);}
-   else {for(const xx of [r.x+15,r.x+r.width-15])for(const zz of [r.y+15,r.y+r.height-15])box(30,item.h,30,xx,base+item.h/2,zz,0x657991);const n=Math.max(2,item.shelves||5);for(let i=0;i<n;i++){const y=base+Math.min(150,item.h*.1)+i*(item.h-Math.min(300,item.h*.2))/(n-1);box(r.width,25,r.height,cx,y,cz,0xc4d1df);}}
-   label(`#${item.uid} ${item.w}×${item.d} · H${item.h}`,cx,base+item.h+90,cz);
+   else {for(const xx of [r.x+15,r.x+r.width-15])for(const zz of [r.y+15,r.y+r.height-15])box(30,item.h,30,xx,base+item.h/2,zz,0x657991);
+    const zs=Array.isArray(item.shelfZs)&&item.shelfZs.length?item.shelfZs:(()=>{const n=Math.max(2,item.shelves||5),first=Math.min(150,item.h*.1),last=item.h-Math.min(300,item.h*.2);return Array.from({length:n},(_,i)=>first+i*(last-first)/Math.max(1,n-1));})();
+    for(const z of zs)box(r.width,25,r.height,cx,base+z-12.5,cz,0xc4d1df);
+    const cargo=item.contents||[];let cursor=r.x+40;let lastShelf=-1;
+    for(const c of cargo.slice().sort((a,b)=>a.shelfIndex-b.shelfIndex||a.cid-b.cid)){
+     const shelfZ=zs[Math.max(0,Math.min(zs.length-1,c.shelfIndex||0))]||150;
+     if(c.shelfIndex!==lastShelf){cursor=r.x+40;lastShelf=c.shelfIndex;}
+     const cw=Math.min(c.w||200,Math.max(60,r.width-80)),cd=Math.min(c.d||150,Math.max(40,r.height-60)),ch=Math.max(40,c.h||100);
+     const px=Math.min(cursor+cw/2,r.x+r.width-cw/2-20);
+     box(cw,ch,cd,px,base+shelfZ+ch/2,cz,c.color||0xb45309);
+     cursor=px+cw/2+24;
+    }
+   }
+   label(`#${item.uid} ${item.w}×${item.d} · H${item.h}${item.shelves?` · ${item.shelves}п`:''}`,cx,base+item.h+90,cz);
   }for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const r=window.getBikeClearance(i),color=window.bikeClearanceIssues(i).length?0xdc2626:0x0d9488;const m=box(r.width,r.height3d,r.height,r.x+r.width/2,r.height3d/2,r.y+r.height/2,color,.035);const edge=new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),new THREE.LineBasicMaterial({color,transparent:true,opacity:.45}));edge.position.copy(m.position);contents.add(edge);}label('1468 мм',734,30,-160);label(`1779 · дверь ${door.width}×${door.height}`,889,30,3020);label(`Потолок ${H} · труба 3221 (трасса неизвестна)`,850,H+170,1400);status.textContent='WebGL · подробная модель велосипеда; габаритный контур — по вашим размерам';resize();
  };
  function resize(){const rect=canvas.parentElement.getBoundingClientRect();if(rect.width<1||rect.height<1)return;renderer.setSize(rect.width,rect.height,false);camera.aspect=rect.width/rect.height;camera.updateProjectionMatrix();}
