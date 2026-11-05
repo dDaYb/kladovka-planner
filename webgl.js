@@ -42,6 +42,35 @@ try {
   for(const sign of [-1,1]){beam(point(sign*width*.43,20,-depth*.2),point(sign*width*.35,item.h-30,depth*.2),0xa8b7c6,18);beam(point(sign*width*.43,20,depth*.3),point(sign*width*.35,item.h*.85,depth*.2),0x71869a,12);}
   const n=Math.max(2,Math.min(12,Math.floor(item.h/270)));for(let k=1;k<n;k++){const y=k*item.h/(n+1);beam(point(-width*.36,y,0),point(width*.36,y,0),0x334155,24);}
  }
+ function drawCargoMesh(c,cw,ch,cd,x,y,z,selected){
+  const g=new THREE.Group();g.position.set(x,y,z);contents.add(g);
+  const tint=new THREE.Color(c.color||'#64748b');
+  const kind=c.kind||(String(c.modelId||'').startsWith('tire')?'tire':'box');
+  if(kind==='tire'){
+   const major=Math.max(40,Math.min(cw,ch)/2-cd*0.22),tube=Math.max(18,cd*0.28);
+   const tire=new THREE.Mesh(new THREE.TorusGeometry(major,tube,10,28),new THREE.MeshStandardMaterial({color:0x111827,roughness:.92,metalness:.05}));
+   const rim=new THREE.Mesh(new THREE.TorusGeometry(major*0.55,tube*0.35,8,20),new THREE.MeshStandardMaterial({color:0xd1d5db,roughness:.45,metalness:.55}));
+   tire.rotation.y=Math.PI/2;rim.rotation.y=Math.PI/2;g.add(tire,rim);
+  }else if(kind==='canister'){
+   g.add(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.42,Math.min(cw,cd)*0.45,ch*0.9,16),new THREE.MeshStandardMaterial({color:tint,roughness:.55,metalness:.1})));
+   g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.12,Math.min(cw,cd)*0.12,ch*0.18,10),new THREE.MeshStandardMaterial({color:0x334155,roughness:.4})),{position:new THREE.Vector3(0,ch*0.48,0)}));
+  }else{
+   // Полупрозрачный пластиковый короб с крышкой и клипсами (Fix Price / Fimako).
+   const bodyMat=new THREE.MeshStandardMaterial({color:tint,transparent:true,opacity:0.52,roughness:0.28,metalness:0.04,depthWrite:true});
+   const lidMat=new THREE.MeshStandardMaterial({color:tint.clone().offsetHSL(0,-0.05,0.12),transparent:true,opacity:0.88,roughness:0.35,metalness:0.05});
+   const body=new THREE.Mesh(new THREE.BoxGeometry(cw*0.94,ch*0.78,cd*0.94),bodyMat);body.position.y=-ch*0.05;g.add(body);
+   const lid=new THREE.Mesh(new THREE.BoxGeometry(cw,ch*0.14,cd),lidMat);lid.position.y=ch*0.4;g.add(lid);
+   const rim=new THREE.Mesh(new THREE.BoxGeometry(cw*0.98,ch*0.05,cd*0.98),new THREE.MeshStandardMaterial({color:tint.clone().offsetHSL(0,0,0.18),roughness:0.4,transparent:true,opacity:0.7}));rim.position.y=ch*0.3;g.add(rim);
+   for(const sx of [-1,1]){const clip=new THREE.Mesh(new THREE.BoxGeometry(cw*0.08,ch*0.16,cd*0.06),new THREE.MeshStandardMaterial({color:0xf8fafc,roughness:0.45}));clip.position.set(sx*cw*0.28,ch*0.28,cd*0.48);g.add(clip);}
+   // Этикетка с ID
+   const tag=document.createElement('canvas');tag.width=256;tag.height=96;const tg=tag.getContext('2d');
+   tg.fillStyle='rgba(255,255,255,0.92)';tg.fillRect(8,12,240,72);tg.fillStyle='#0f172a';tg.font='bold 36px sans-serif';tg.textAlign='center';tg.fillText(String(c.id||c.cid||''),128,58);
+   const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(tag),depthTest:true,transparent:true}));
+   sprite.position.set(0,ch*0.05,cd*0.48);sprite.scale.set(Math.min(cw*0.7,220),Math.min(ch*0.35,80),1);g.add(sprite);
+   if(kind==='suitcase'){const handle=new THREE.Mesh(new THREE.TorusGeometry(cw*0.12,8,6,12,Math.PI),new THREE.MeshStandardMaterial({color:0x1e293b}));handle.rotation.x=Math.PI/2;handle.position.set(0,ch*0.5,0);g.add(handle);}
+  }
+  if(selected){const halo=new THREE.Mesh(new THREE.BoxGeometry(cw*1.08,ch*1.08,cd*1.08),new THREE.MeshBasicMaterial({color:0x2563eb,transparent:true,opacity:0.12,depthWrite:false}));g.add(halo);}
+ }
  window.renderWebGL=()=>{const state=window.plannerState?.();if(!state)return;clear();const {items,getItemRect,ceilingHeight,wallOpacity,selectedId}=state;
   const shape=new THREE.Shape();[[0,0],[1468,0],[1468,1394],[1779,1394],[1779,2860],[0,2860]].forEach(([x,z],k)=>k?shape.lineTo(x,-z):shape.moveTo(x,-z));shape.closePath();const floor=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:0xdbe4e9,side:THREE.DoubleSide}));floor.rotation.x=-Math.PI/2;contents.add(floor);
   const H=ceilingHeight,door=state.DOOR||window.DOOR||{left:200,width:1050,height:2100,right:529,start:200,end:1250};
@@ -57,12 +86,14 @@ try {
     const zs=Array.isArray(item.shelfZs)&&item.shelfZs.length?item.shelfZs:(()=>{const n=Math.max(2,item.shelves||5),first=Math.min(150,item.h*.1),last=item.h-Math.min(300,item.h*.2);return Array.from({length:n},(_,i)=>first+i*(last-first)/Math.max(1,n-1));})();
     for(const z of zs)box(r.width,25,r.height,cx,base+z-12.5,cz,0xc4d1df);
     const cargo=item.contents||[];let cursor=r.x+40;let lastShelf=-1;
-    for(const c of cargo.slice().sort((a,b)=>a.shelfIndex-b.shelfIndex||a.cid-b.cid)){
+    const selectedCargo=state.selectedCargoId;
+    for(const c of cargo.slice().sort((a,b)=>(a.shelfIndex-b.shelfIndex)||((a.order||0)-(b.order||0))||String(a.id).localeCompare(String(b.id)))){
      const shelfZ=zs[Math.max(0,Math.min(zs.length-1,c.shelfIndex||0))]||150;
      if(c.shelfIndex!==lastShelf){cursor=r.x+40;lastShelf=c.shelfIndex;}
      const cw=Math.min(c.w||200,Math.max(60,r.width-80)),cd=Math.min(c.d||150,Math.max(40,r.height-60)),ch=Math.max(40,c.h||100);
      const px=Math.min(cursor+cw/2,r.x+r.width-cw/2-20);
-     box(cw,ch,cd,px,base+shelfZ+ch/2,cz,c.color||0xb45309);
+     const py=base+shelfZ+ch/2, selected=selectedCargo&&(selectedCargo===c.id||String(selectedCargo)===String(c.cid));
+     drawCargoMesh(c,cw,ch,cd,px,py,cz,selected);
      cursor=px+cw/2+24;
     }
    }
