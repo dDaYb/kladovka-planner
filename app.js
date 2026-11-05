@@ -608,7 +608,7 @@ function renderShelfInspector(item) {
   const shelfChips = item.shelfZs.map((z, i) => {
     const n = shelfCargo(item, i).length;
     const bad = shelfCargo(item, i).some(c => c.h > shelfClearance(item, i)) || shelfWidthUsed(item, i) > item.w;
-    return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" onclick="selectShelfIndex(${i})" role="tab" aria-selected="${i===active}">
+    return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" data-shelf-drop="${i}" onclick="selectShelfIndex(${i})" role="tab" aria-selected="${i===active}">
       <span class="shelf-chip-title">Полка ${i + 1}</span>
       <span class="shelf-chip-meta">${z} мм · ${n || 'пусто'}${bad?' · !':''}</span>
     </button>`;
@@ -617,8 +617,9 @@ function renderShelfInspector(item) {
     const sel = selectedCargoId === c.id;
     const fits = c.h <= clear && c.d <= item.d;
     const shelfOpts = item.shelfZs.map((_, s) => `<option value="${s}" ${s===c.shelfIndex?'selected':''}>→ полка ${s + 1}</option>`).join('');
-    return `<article class="cargo-card${sel?' selected':''}${fits?'':' problem'}" data-cargo-id="${c.id}" onclick="selectCargo('${c.id}')" tabindex="0" aria-selected="${sel}">
+    return `<article class="cargo-card${sel?' selected':''}${fits?'':' problem'}" data-cargo-id="${c.id}" data-cargo-index="${idx}" data-rack-uid="${item.uid}" tabindex="0" aria-selected="${sel}" aria-grabbed="false">
       <div class="cargo-card-main">
+        <span class="cargo-drag-handle" title="Перетащить" aria-hidden="true">⋮⋮</span>
         ${cargoThumbSvg({id:c.modelId,color:c.color})}
         <div class="cargo-card-text">
           <div class="cargo-card-top"><span class="cargo-id">${c.id}</span>${fits?'':'<span class="cargo-flag">не влезает</span>'}</div>
@@ -626,18 +627,18 @@ function renderShelfInspector(item) {
           <div class="cargo-card-meta">${c.w}×${c.d}×${c.h} мм</div>
         </div>
       </div>
-      <div class="cargo-card-actions${sel?' open':''}" onclick="event.stopPropagation()">
+      <div class="cargo-card-actions${sel?' open':''}">
         <button type="button" class="btn icon" title="Левее на полке" aria-label="Левее" ${idx===0?'disabled':''} onclick="reorderCargo(${item.uid}, '${c.id}', -1)">←</button>
         <button type="button" class="btn icon" title="Правее на полке" aria-label="Правее" ${idx===cargo.length-1?'disabled':''} onclick="reorderCargo(${item.uid}, '${c.id}', 1)">→</button>
         <select class="cargo-shelf-select" aria-label="Перенести ${c.id}" onchange="moveCargoToShelf(${item.uid}, '${c.id}', this.value)">${shelfOpts}</select>
         <button type="button" class="btn" onclick="editCargoSize(${item.uid}, '${c.id}')">Размер</button>
         <button type="button" class="btn danger icon" title="Удалить" aria-label="Удалить ${c.id}" onclick="removeCargo(${item.uid}, '${c.id}')">✕</button>
       </div>
-      ${sel?'':'<div class="cargo-card-hint">Клик — выбрать · ← → переставить</div>'}
+      ${sel?'':'<div class="cargo-card-hint">Перетащите · ← → · на чип полки</div>'}
     </article>`;
   }).join('');
   return `
-    <section class="shelf-panel">
+    <section class="shelf-panel" data-rack-uid="${item.uid}">
       <div class="shelf-panel-head">
         <div>
           <div class="shelf-panel-title">Полки и вещи</div>
@@ -659,8 +660,8 @@ function renderShelfInspector(item) {
         <div class="note">Просвет: <b>${clear} мм</b> · ширина занята <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':''}</div>
         <div class="shelf-fill${fillOver?' over':''}" role="meter" aria-valuemin="0" aria-valuemax="${item.w}" aria-valuenow="${used}" aria-label="Занятость полки по ширине"><span style="width:${fillPct}%"></span></div>
       </div>
-      <div class="cargo-list">
-        ${cargoCards || `<div class="cargo-empty">На этой полке пусто.<br><button type="button" class="btn primary" onclick="openCargoCatalog()">Добавить из каталога</button></div>`}
+      <div class="cargo-list" data-rack-uid="${item.uid}">
+        ${cargoCards || `<div class="cargo-empty" data-shelf-drop="${active}">На этой полке пусто.<br><button type="button" class="btn primary" onclick="openCargoCatalog()">Добавить из каталога</button></div>`}
       </div>
       ${issues.length?`<div class="warn">${issues[0]}${issues.length>1?` (+ ещё ${issues.length-1})`:''}</div>`:(cargoCount?`<div class="ok">По высоте и ширине всё помещается.</div>`:'')}
     </section>`;
@@ -738,6 +739,28 @@ function selectCargo(cargoId) {
   refreshAll();
 }
 
+function placeCargo(rackUid, cargoId, toShelf, toIndex) {
+  const rack = items.find(i => i.uid === rackUid);
+  if (!isShelfRack(rack)) return false;
+  ensureShelfLayout(rack);
+  const cargo = findCargo(rack, cargoId);
+  if (!cargo) return false;
+  const from = cargo.shelfIndex;
+  const targetShelf = Math.max(0, Math.min(rack.shelves - 1, Number(toShelf)));
+  const oldIndex = shelfCargo(rack, from).findIndex(c => c.id === cargo.id);
+  const dest = shelfCargo(rack, targetShelf).filter(c => c.id !== cargo.id);
+  const idx = Math.max(0, Math.min(dest.length, Number.isFinite(Number(toIndex)) ? Number(toIndex) : dest.length));
+  if (from === targetShelf && oldIndex === idx) return false;
+  cargo.shelfIndex = targetShelf;
+  dest.splice(idx, 0, cargo);
+  dest.forEach((c, i) => { c.order = i; });
+  if (from !== targetShelf) reindexShelfOrders(rack, from);
+  activeShelfIndex = targetShelf;
+  selectedCargoId = cargo.id;
+  refreshAll();
+  return true;
+}
+
 function moveCargoToShelf(rackUid, cargoId, shelfIndex) {
   const rack = items.find(i => i.uid === rackUid);
   if (!isShelfRack(rack)) return;
@@ -745,16 +768,9 @@ function moveCargoToShelf(rackUid, cargoId, shelfIndex) {
   const cargo = findCargo(rack, cargoId);
   if (!cargo) return;
   const to = Math.max(0, Math.min(rack.shelves - 1, Number(shelfIndex)));
-  const from = cargo.shelfIndex;
-  if (to === from) return;
-  cargo.shelfIndex = to;
-  cargo.order = shelfCargo(rack, to).filter(c => c.id !== cargo.id).length;
-  reindexShelfOrders(rack, from);
-  reindexShelfOrders(rack, to);
-  activeShelfIndex = to;
-  selectedCargoId = cargo.id;
-  refreshAll();
-  toast(`${cargo.id} → полка ${to + 1}`);
+  if (to === cargo.shelfIndex) return;
+  placeCargo(rackUid, cargoId, to, shelfCargo(rack, to).length);
+  toast(`${cargoId} → полка ${to + 1}`);
 }
 
 function reorderCargo(rackUid, cargoId, direction) {
@@ -767,12 +783,127 @@ function reorderCargo(rackUid, cargoId, direction) {
   const idx = list.findIndex(c => c.id === cargo.id);
   const swapWith = idx + (direction < 0 ? -1 : 1);
   if (idx < 0 || swapWith < 0 || swapWith >= list.length) return;
-  const a = list[idx].order, b = list[swapWith].order;
-  list[idx].order = b;
-  list[swapWith].order = a;
-  reindexShelfOrders(rack, cargo.shelfIndex);
-  selectedCargoId = cargo.id;
-  refreshAll();
+  placeCargo(rackUid, cargoId, cargo.shelfIndex, swapWith);
+}
+
+let cargoDrag = null;
+
+function clearCargoDropMarks() {
+  document.querySelectorAll('.cargo-card.drag-over-before,.cargo-card.drag-over-after,.shelf-chip.drag-target,.cargo-list.drag-active,.cargo-card.dragging').forEach(el => {
+    el.classList.remove('drag-over-before', 'drag-over-after', 'drag-target', 'drag-active', 'dragging');
+    if (el.hasAttribute('aria-grabbed')) el.setAttribute('aria-grabbed', 'false');
+  });
+}
+
+function endCargoDrag(commit) {
+  if (!cargoDrag) return;
+  const state = cargoDrag;
+  cargoDrag = null;
+  window.removeEventListener('pointermove', onCargoDragMove);
+  window.removeEventListener('pointerup', onCargoDragUp);
+  window.removeEventListener('pointercancel', onCargoDragCancel);
+  clearCargoDropMarks();
+  if (!commit || !state.moved) {
+    if (!state.moved && state.cargoId) selectCargo(state.cargoId);
+    return;
+  }
+  if (state.dropShelf != null && state.dropShelf !== state.fromShelf) {
+    placeCargo(state.rackUid, state.cargoId, state.dropShelf, Number.POSITIVE_INFINITY);
+    toast(`${state.cargoId} → полка ${state.dropShelf + 1}`);
+    return;
+  }
+  if (state.dropIndex != null) {
+    placeCargo(state.rackUid, state.cargoId, state.fromShelf, state.dropIndex);
+  }
+}
+
+function onCargoDragCancel() { endCargoDrag(false); }
+
+function onCargoDragMove(e) {
+  if (!cargoDrag) return;
+  const dx = e.clientX - cargoDrag.x;
+  const dy = e.clientY - cargoDrag.y;
+  if (!cargoDrag.moved && Math.hypot(dx, dy) < 6) return;
+  if (!cargoDrag.moved) {
+    cargoDrag.moved = true;
+    const card = document.querySelector(`.cargo-card[data-cargo-id="${cargoDrag.cargoId}"]`);
+    card?.classList.add('dragging');
+    card?.setAttribute('aria-grabbed', 'true');
+    document.querySelector('.cargo-list')?.classList.add('drag-active');
+    try { cargoDrag.pointerId != null && e.target?.setPointerCapture?.(cargoDrag.pointerId); } catch (_) {}
+  }
+  e.preventDefault();
+  clearCargoDropMarks();
+  document.querySelector(`.cargo-card[data-cargo-id="${cargoDrag.cargoId}"]`)?.classList.add('dragging');
+  document.querySelector('.cargo-list')?.classList.add('drag-active');
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const chip = under?.closest?.('[data-shelf-drop]');
+  if (chip) {
+    const shelf = Number(chip.getAttribute('data-shelf-drop'));
+    cargoDrag.dropShelf = shelf;
+    cargoDrag.dropIndex = null;
+    chip.classList.add('drag-target');
+    return;
+  }
+  cargoDrag.dropShelf = null;
+  const overCard = under?.closest?.('.cargo-card:not(.dragging)');
+  const list = document.querySelector('.cargo-list');
+  if (overCard && list?.contains(overCard)) {
+    const rect = overCard.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    const overIndex = Number(overCard.getAttribute('data-cargo-index'));
+    let dropIndex = before ? overIndex : overIndex + 1;
+    const fromIndex = cargoDrag.fromIndex;
+    if (dropIndex > fromIndex) dropIndex -= 1;
+    cargoDrag.dropIndex = dropIndex;
+    overCard.classList.add(before ? 'drag-over-before' : 'drag-over-after');
+    return;
+  }
+  if (list && under && list.contains(under)) {
+    cargoDrag.dropIndex = shelfCargo(items.find(i => i.uid === cargoDrag.rackUid), cargoDrag.fromShelf).length - 1;
+  }
+}
+
+function onCargoDragUp() { endCargoDrag(true); }
+
+function startCargoDrag(e, card) {
+  if (e.button != null && e.button !== 0) return;
+  if (e.target.closest('button, select, input, a, .cargo-card-actions')) return;
+  const rackUid = Number(card.getAttribute('data-rack-uid'));
+  const cargoId = card.getAttribute('data-cargo-id');
+  const fromIndex = Number(card.getAttribute('data-cargo-index'));
+  if (!cargoId || !Number.isFinite(rackUid)) return;
+  const rack = items.find(i => i.uid === rackUid);
+  if (!isShelfRack(rack)) return;
+  const cargo = findCargo(rack, cargoId);
+  if (!cargo) return;
+  cargoDrag = {
+    rackUid,
+    cargoId,
+    fromIndex,
+    fromShelf: cargo.shelfIndex,
+    x: e.clientX,
+    y: e.clientY,
+    pointerId: e.pointerId,
+    moved: false,
+    dropIndex: null,
+    dropShelf: null
+  };
+  try { card.setPointerCapture?.(e.pointerId); } catch (_) {}
+  window.addEventListener('pointermove', onCargoDragMove, { passive: false });
+  window.addEventListener('pointerup', onCargoDragUp);
+  window.addEventListener('pointercancel', onCargoDragCancel);
+}
+
+function bindCargoDrag() {
+  const box = document.getElementById('inspectorContent');
+  if (!box || box.dataset.cargoDrag === '1') return;
+  box.dataset.cargoDrag = '1';
+  box.addEventListener('pointerdown', e => {
+    const card = e.target.closest('.cargo-card');
+    if (!card || !box.contains(card)) return;
+    startCargoDrag(e, card);
+  });
 }
 
 function setBikeMode(uid, mode) {
@@ -1194,6 +1325,7 @@ function refreshAll() {
 window.addEventListener('DOMContentLoaded', async () => {
   renderCatalog();
   init3DEvents();
+  bindCargoDrag();
   if(!await restorePlan()) applyPreset('se_bike');
   const shareButton=document.querySelector('[onclick="sharePlan()"]');
   shareButton.textContent='Короткая ссылка';shareButton.onclick=shareShortPlan;
@@ -1386,7 +1518,7 @@ window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.makeSeModel=makeSeM
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
-window.selectCargo=selectCargo;window.moveCargoToShelf=moveCargoToShelf;window.reorderCargo=reorderCargo;
+window.selectCargo=selectCargo;window.moveCargoToShelf=moveCargoToShelf;window.reorderCargo=reorderCargo;window.placeCargo=placeCargo;
 window.findCargo=findCargo;window.makeCargoInstance=makeCargoInstance;
 window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;window.shelfWidthUsed=shelfWidthUsed;window.shelfCargo=shelfCargo;
 window.defaultShelfZs=defaultShelfZs;
