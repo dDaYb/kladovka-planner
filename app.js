@@ -62,6 +62,18 @@ const WALL_INFO = {
   right_bot: { label: 'Правая низ (1466 мм)',  maxLen: 1466 }
 };
 
+// Дверь на нижней стене (вид из кладовки). Слева 200 + проём 1050 + справа обмер ≈500;
+// справа согласовано до 529 мм, чтобы замкнуть ширину 1779.
+const DOOR = {
+  left: 200,
+  width: 1050,
+  height: 2100,
+  bottomWidth: 1779,
+  get right() { return this.bottomWidth - this.left - this.width; },
+  get start() { return this.left; },
+  get end() { return this.left + this.width; }
+};
+
 let currentCatalogTab = 'se';
 let items = [];
 let selectedId = null;
@@ -486,10 +498,15 @@ function render2D() {
     <path d="M 0,0 L 1468,0 L 1468,1394 L 1779,1394 L 1779,2860 L 0,2860 Z"
           fill="none" stroke="#1e293b" stroke-width="26" stroke-linejoin="miter" pointer-events="none"/>
 
-    <!-- Дверной проем -->
-    <line x1="510" y1="2860" x2="1587" y2="2860" stroke="#ffffff" stroke-width="30"/>
-    <line x1="510" y1="2860" x2="1587" y2="2860" stroke="#d97706" stroke-width="10" stroke-dasharray="28,20"/>
-    <text x="950" y="2810" fill="#92400e" font-size="50" font-weight="bold" text-anchor="middle">Вход ≈1077 с наличниками</text>
+    <!-- Дверной проем: слева ${DOOR.left}, проём ${DOOR.width}, справа ${DOOR.right}; высота ${DOOR.height} -->
+    <line x1="${DOOR.start}" y1="2860" x2="${DOOR.end}" y2="2860" stroke="#ffffff" stroke-width="30"/>
+    <line x1="${DOOR.start}" y1="2860" x2="${DOOR.end}" y2="2860" stroke="#d97706" stroke-width="10" stroke-dasharray="28,20"/>
+    <text x="${(DOOR.start + DOOR.end) / 2}" y="2810" fill="#92400e" font-size="46" font-weight="bold" text-anchor="middle">Дверь ${DOOR.width} × ${DOOR.height} (с наличниками)</text>
+    <g fill="#92400e" font-size="40" text-anchor="middle">
+      <text x="${DOOR.left / 2}" y="2945">${DOOR.left}</text>
+      <text x="${(DOOR.start + DOOR.end) / 2}" y="2945">${DOOR.width}</text>
+      <text x="${DOOR.end + DOOR.right / 2}" y="2945">${DOOR.right}≈500</text>
+    </g>
   `;
 
   // Навешиваем обработчики перетаскивания на объекты
@@ -578,7 +595,8 @@ function onSvgPointerUp() {
 // 4. WebGL uses the same object rectangles as the SVG plan.
 function render3D(){ if(window.renderWebGL) window.renderWebGL(); }
 function init3DEvents(){}
-window.plannerState=()=>({items,selectedId,ceilingHeight,wallOpacity,getItemRect});
+window.plannerState=()=>({items,selectedId,ceilingHeight,wallOpacity,getItemRect,DOOR});
+window.DOOR=DOOR;
 window.selectPlannerItem=uid=>{selectedId=uid;refreshAll();};
 function updateHeaderSummary() {
   const total = items.reduce((sum, i) => sum + (i.price || 0), 0);
@@ -828,7 +846,7 @@ function undoAutoArrange(){if(!beforeAuto)return;const old=beforeAuto;beforeAuto
 function autoArrange(){
  if(!items.length){toast('Сначала добавьте предметы.');return;}
  if(items.length>20){toast('Авторасстановка рассчитана максимум на 20 предметов.');return;}
- const entrance={x:510,y:2460,width:1077,height:400};
+ const entrance={x:DOOR.start,y:2460,width:DOOR.width,height:400};
  const source=items.map(i=>({...i}));let best=null,bestScore=Infinity;
  function candidates(item,placed){const out=[];
   if(item.isBike&&item.bikeMode!=='vert'){
@@ -855,7 +873,7 @@ function autoArrange(){
 function autoReachable(layout){
  const radius=200,step=100,queue=[],seen=new Set(),rects=layout.filter(i=>(i.z||0)<1800).map(getItemRect);
  function clear(x,y){const r={x:x-radius,y:y-radius,width:radius*2,height:radius*2};return rectInside(r)&&!rects.some(o=>overlap(r,o));}
- for(let x=710;x<=1387;x+=step)if(clear(x,2660)){queue.push([x,2660]);seen.add(`${x},2660`);}
+ for(let x=DOOR.start+200;x<=DOOR.end-200;x+=step)if(clear(x,2660)){queue.push([x,2660]);seen.add(`${x},2660`);}
  for(let k=0;k<queue.length;k++){const [x,y]=queue[k];for(const [dx,dy] of [[step,0],[-step,0],[0,step],[0,-step]]){const nx=x+dx,ny=y+dy,key=`${nx},${ny}`;if(!seen.has(key)&&clear(nx,ny)){seen.add(key);queue.push([nx,ny]);}}}
  return layout.every(i=>{const r=getItemRect(i);return queue.some(([x,y])=>{const dx=Math.max(r.x-x,0,x-r.x-r.width),dy=Math.max(r.y-y,0,y-r.y-r.height);if(Math.hypot(dx,dy)>350)return false;if(i.isBike||i.isSki||i.isLadder||i.free)return true;return i.wall==='top'?y>=r.y+r.height:i.wall==='left'?x>=r.x+r.width:x<=r.x;});});
 }
