@@ -50,6 +50,22 @@ CATALOG.ski = [
  {id:'ski_nordic',brand:'Лыжи',name:'Беговые лыжи · вертикальный подвес',isSki:true,w:180,d:160,h:2100,z:150,shelves:0,price:0,color:'#a21caf'}
 ];
 CATALOG.ladder = [{id:'ladder_folded',brand:'Стремянка',name:'Стремянка сложенная',isLadder:true,w:500,d:120,h:1800,shelves:0,price:0,color:'#0891b2'}];
+// Предметы только на полки стеллажа (не ставятся на пол комнаты).
+CATALOG.cargo = [
+  {id:'box_s', brand:'На полку', isCargo:true, name:'Короб малый 400×300×250', w:400, d:300, h:250, price:0, color:'#ca8a04'},
+  {id:'box_m', brand:'На полку', isCargo:true, name:'Короб средний 600×400×350', w:600, d:400, h:350, price:0, color:'#a16207'},
+  {id:'box_l', brand:'На полку', isCargo:true, name:'Короб большой 700×500×450', w:700, d:500, h:450, price:0, color:'#854d0e'},
+  {id:'bin_flat', brand:'На полку', isCargo:true, name:'Ящик низкий 500×350×150', w:500, d:350, h:150, price:0, color:'#0f766e'},
+  {id:'bin_tall', brand:'На полку', isCargo:true, name:'Ящик высокий 400×300×450', w:400, d:300, h:450, price:0, color:'#115e59'},
+  {id:'suitcase', brand:'На полку', isCargo:true, name:'Чемодан 750×450×280', w:750, d:450, h:280, price:0, color:'#1d4ed8'},
+  {id:'canister', brand:'На полку', isCargo:true, name:'Канистра 350×200×400', w:350, d:200, h:400, price:0, color:'#b45309'},
+  {id:'custom_cargo', brand:'На полку', isCargo:true, name:'Свой предмет 400×300×300', w:400, d:300, h:300, price:0, color:'#64748b'}
+];
+
+const SHELF_STEP = 25;      // шаг перфорации SE
+const SHELF_PLATE = 25;     // толщина полки в модели
+const SHELF_MIN = 2;
+const SHELF_MAX = 8;
 // Геометрия стен:
 // left: x=0, y in [0..2860]
 // top: y=0, x in [0..1468]
@@ -80,6 +96,79 @@ let selectedId = null;
 let ceilingHeight = 3358;
 let wallOpacity = 0.35;
 let nextUid = 1;
+let nextCargoId = 1;
+let activeShelfIndex = 0; // полка выбранного стеллажа для добавления из каталога
+
+function snapShelfZ(z, brand) {
+  const n = Math.round(Number(z) || 0);
+  if (brand === 'SE 750кг') return Math.max(SHELF_PLATE, Math.round(n / SHELF_STEP) * SHELF_STEP);
+  return Math.max(SHELF_PLATE, n);
+}
+
+function defaultShelfZs(h, n, brand) {
+  const count = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Number(n) || 5));
+  const height = Math.max(400, Number(h) || 1800);
+  let first = snapShelfZ(Math.min(150, Math.round(height * 0.08)), brand);
+  let last = snapShelfZ(height - Math.min(250, Math.round(height * 0.08)), brand);
+  if (last <= first + SHELF_STEP) last = snapShelfZ(height - 50, brand);
+  const zs = [];
+  for (let i = 0; i < count; i++) {
+    const raw = count === 1 ? first : first + i * (last - first) / (count - 1);
+    zs.push(snapShelfZ(raw, brand));
+  }
+  for (let i = 1; i < zs.length; i++) {
+    if (zs[i] <= zs[i - 1]) zs[i] = zs[i - 1] + (brand === 'SE 750кг' ? SHELF_STEP : 50);
+  }
+  while (zs.length && zs[zs.length - 1] >= height) zs[zs.length - 1] -= brand === 'SE 750кг' ? SHELF_STEP : 50;
+  return zs;
+}
+
+function ensureShelfLayout(item) {
+  if (!isShelfRack(item)) return item;
+  const n = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Number(item.shelves) || 5));
+  item.shelves = n;
+  if (!Array.isArray(item.shelfZs) || item.shelfZs.length !== n) {
+    item.shelfZs = defaultShelfZs(item.h, n, item.brand);
+  } else {
+    item.shelfZs = item.shelfZs.map(z => snapShelfZ(z, item.brand));
+    for (let i = 1; i < item.shelfZs.length; i++) {
+      if (item.shelfZs[i] <= item.shelfZs[i - 1]) item.shelfZs[i] = item.shelfZs[i - 1] + (item.brand === 'SE 750кг' ? SHELF_STEP : 50);
+    }
+    item.shelfZs = item.shelfZs.map(z => Math.min(item.h - SHELF_PLATE, Math.max(SHELF_PLATE, z)));
+  }
+  if (!Array.isArray(item.contents)) item.contents = [];
+  for (const c of item.contents) c.shelfIndex = Math.max(0, Math.min(n - 1, Number(c.shelfIndex) || 0));
+  activeShelfIndex = Math.max(0, Math.min(n - 1, activeShelfIndex));
+  return item;
+}
+
+function shelfClearance(item, shelfIndex) {
+  ensureShelfLayout(item);
+  const z = item.shelfZs[shelfIndex];
+  const top = shelfIndex < item.shelfZs.length - 1 ? item.shelfZs[shelfIndex + 1] - SHELF_PLATE : item.h;
+  return Math.max(0, top - z);
+}
+
+function shelfCargo(item, shelfIndex) {
+  return (item.contents || []).filter(c => c.shelfIndex === shelfIndex);
+}
+
+function shelfIssues(item) {
+  if (!isShelfRack(item)) return [];
+  ensureShelfLayout(item);
+  const issues = [];
+  for (let i = 0; i < item.shelves; i++) {
+    const clear = shelfClearance(item, i);
+    const cargo = shelfCargo(item, i);
+    const widthUsed = cargo.reduce((s, c) => s + (c.w || 0), 0);
+    if (widthUsed > item.w) issues.push(`Полка ${i + 1}: сумма ширин ${widthUsed} > ${item.w} мм`);
+    for (const c of cargo) {
+      if (c.h > clear) issues.push(`«${c.name}» на полке ${i + 1}: нужно ${c.h} мм, просвет ${clear} мм`);
+      if (c.d > item.d) issues.push(`«${c.name}» глубже полки (${c.d} > ${item.d} мм)`);
+    }
+  }
+  return issues;
+}
 
 function findCatalogModel(modelId) {
   for (const k of Object.keys(CATALOG)) {
@@ -119,11 +208,12 @@ function setRackDimension(uid, key, value) {
   item[key] = n;
   if (item.brand === 'SE 750кг') {
     const m = makeSeModel(item.w, item.d);
-    Object.assign(item, { modelId: m.id, name: m.name, h: m.h, shelves: m.shelves, price: m.price, color: m.color });
+    Object.assign(item, { modelId: m.id, name: m.name, h: m.h, price: m.price, color: m.color });
   } else {
-    const match = Object.values(CATALOG).flat().find(m => m.brand === item.brand && m.w === item.w && m.d === item.d && !m.isBike && !m.isSki && !m.isLadder);
-    if (match) Object.assign(item, { modelId: match.id, name: match.name, h: match.h, shelves: match.shelves, price: match.price, color: match.color });
+    const match = Object.values(CATALOG).flat().find(m => m.brand === item.brand && m.w === item.w && m.d === item.d && !m.isBike && !m.isSki && !m.isLadder && !m.isCargo);
+    if (match) Object.assign(item, { modelId: match.id, name: match.name, h: match.h, price: match.price, color: match.color });
   }
+  ensureShelfLayout(item);
   if (!item.free) {
     const max = WALL_INFO[item.wall].maxLen - placedSize(item).w;
     item.offset = Math.max(0, Math.min(item.offset, Math.max(0, max)));
@@ -151,7 +241,7 @@ function getItemRect(item) {
 
 function addItem(modelId, wall = 'left', offset = 0) {
   const m = findCatalogModel(modelId);
-  if (!m) return;
+  if (!m || m.isCargo) return;
   if(items.length>=100){toast('В проекте не более 100 объектов');return;}
   const maxOffset = Math.max(0, WALL_INFO[wall].maxLen - m.w);
   const clampedOffset = Math.min(Math.max(0, offset), maxOffset);
@@ -170,16 +260,46 @@ function addItem(modelId, wall = 'left', offset = 0) {
     bikeMode: m.bikeMode || null,
     isLadder: !!m.isLadder, isSki: !!m.isSki, z: m.z || 0, gap: 20,
     wall: wall,
-    offset: clampedOffset
+    offset: clampedOffset,
+    contents: [],
+    shelfZs: null
   };
+  if (isShelfRack(newItem)) ensureShelfLayout(newItem);
   items.push(newItem);
   selectedId = newItem.uid;
   refreshAll();
 }
 
+function addCargoToRack(rackUid, modelId, shelfIndex) {
+  const rack = items.find(i => i.uid === rackUid);
+  const m = findCatalogModel(modelId);
+  if (!isShelfRack(rack) || !m?.isCargo) { toast('Сначала выберите стеллаж на плане'); return; }
+  ensureShelfLayout(rack);
+  const idx = Math.max(0, Math.min(rack.shelves - 1, Number(shelfIndex ?? activeShelfIndex) || 0));
+  if ((rack.contents || []).length >= 40) { toast('На одном стеллаже не более 40 предметов'); return; }
+  rack.contents.push({
+    cid: nextCargoId++,
+    modelId: m.id,
+    name: m.name,
+    w: m.w,
+    d: m.d,
+    h: m.h,
+    color: m.color,
+    shelfIndex: idx
+  });
+  activeShelfIndex = idx;
+  selectedId = rackUid;
+  refreshAll();
+  const clear = shelfClearance(rack, idx);
+  if (m.h > clear) toast(`Добавлено на полку ${idx + 1}, но высоты ${m.h} мм не хватает (просвет ${clear} мм)`);
+  else toast(`Добавлено на полку ${idx + 1}`);
+}
+
 function applyPreset(presetName) {
   items = [];
   nextUid = 1;
+  nextCargoId = 1;
+  activeShelfIndex = 0;
   if (presetName === 'se_bike') {
     addItem('se_900_500','top',550);
     addItem('se_1200_500','left',40);
@@ -231,6 +351,35 @@ function switchCatalogTab(tab, btnEl) {
 function renderCatalog() {
   const container = document.getElementById('catalogList');
   const list = CATALOG[currentCatalogTab] || [];
+  if (currentCatalogTab === 'cargo') {
+    const rack = items.find(i => i.uid === selectedId && isShelfRack(i));
+    if (!rack) {
+      container.innerHTML = '<div class="note">Выберите стеллаж на плане, затем добавьте предметы на его полки. Цель — понять, сколько полок и какой просвет нужны.</div>';
+      return;
+    }
+    ensureShelfLayout(rack);
+    activeShelfIndex = Math.max(0, Math.min(rack.shelves - 1, activeShelfIndex));
+    container.innerHTML = `
+      <div class="note" style="margin-bottom:8px">Стеллаж №${rack.uid}: полка <b>${activeShelfIndex + 1}</b> из ${rack.shelves}, просвет ${shelfClearance(rack, activeShelfIndex)} мм</div>
+      <div class="wall-add-btns" style="margin-bottom:10px">${rack.shelfZs.map((z, i) => `
+        <button style="${i===activeShelfIndex?'background:#2563eb;color:#fff;':''}" onclick="selectShelfIndex(${i})">Полка ${i + 1}<br><span style="font-weight:400">${z} мм</span></button>
+      `).join('')}</div>
+      ${list.map(m => `
+        <div class="catalog-item">
+          <div class="catalog-item-top">
+            <div>
+              <div class="catalog-item-name">${m.name}</div>
+              <div class="catalog-item-sub">Нужен просвет ≥ ${m.h} мм • основание ${m.w}×${m.d}</div>
+            </div>
+            <div class="catalog-item-price">На полку</div>
+          </div>
+          <div class="wall-add-btns">
+            <button onclick="addCargoToRack(${rack.uid}, '${m.id}', ${activeShelfIndex})">+ На полку ${activeShelfIndex + 1}</button>
+          </div>
+        </div>
+      `).join('')}`;
+    return;
+  }
   container.innerHTML = list.map(m => `
     <div class="catalog-item">
       <div class="catalog-item-top">
@@ -248,6 +397,20 @@ function renderCatalog() {
       </div>
     </div>
   `).join('');
+}
+
+function selectShelfIndex(index) {
+  activeShelfIndex = Math.max(0, Number(index) || 0);
+  renderCatalog();
+  renderInspector();
+}
+
+function openCargoCatalog() {
+  currentCatalogTab = 'cargo';
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'cargo'"));
+  });
+  renderCatalog();
 }
 
 function renderInspector() {
@@ -295,6 +458,7 @@ function renderInspector() {
     <div class="note">Обмер велосипеда: 1700×500×1000 мм (Д×Ш×В). При подвесе: 500×1000×1700 мм без крепления. Ширина с повёрнутым рулём пока оценочная.</div><div class="note">Оценочный объём для опускания и манёвра. Не проверяет весь путь через дверь. Размеры уточните по велосипеду и креплению.</div></fieldset>`:''}
     <div class="note">Размеры вдоль стены × глубина × высота, мм</div>
     ${['w','d','h','gap','z'].map((k,j)=>`<label class="inspector-row">${['Ширина вдоль стены','Глубина','Высота','Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="${k==='gap'||k==='z'?0:1}" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+    ${isShelfRack(item)?renderShelfInspector(item):''}
 
     <div style="margin-bottom:8px;">
       <div style="margin-bottom:4px;">Привязка к стене:</div>
@@ -317,6 +481,99 @@ function renderInspector() {
       <button class="btn danger" onclick="deleteItem(${item.uid})">🗑 Удалить</button>
     </div>
   `;
+}
+
+function renderShelfInspector(item) {
+  ensureShelfLayout(item);
+  const issues = shelfIssues(item);
+  const cargoCount = (item.contents || []).length;
+  return `
+    <fieldset style="margin:10px 0;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px">
+      <legend>Полки и вещи</legend>
+      <label class="inspector-row">Число полок (2–8)
+        <input type="number" aria-label="shelves" min="${SHELF_MIN}" max="${SHELF_MAX}" value="${item.shelves}" onchange="setShelfCount(${item.uid}, this.value)">
+      </label>
+      <div class="wall-add-btns" style="margin:6px 0">
+        <button onclick="redistributeShelves(${item.uid})">Равномерно · шаг 25 мм</button>
+        <button onclick="openCargoCatalog()">Каталог «На полку»</button>
+      </div>
+      <div class="note">Высота — верх полки от низа стеллажа. У SE шаг отверстий 25 мм. Предметов: ${cargoCount}.</div>
+      ${item.shelfZs.map((z, i) => {
+        const clear = shelfClearance(item, i);
+        const cargo = shelfCargo(item, i);
+        const active = i === activeShelfIndex;
+        return `<div style="border-top:1px solid #e2e8f0;padding:8px 0;${active?'background:#eff6ff;margin:0 -6px;padding:8px 6px;border-radius:6px':''}">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button class="btn" style="margin:0;${active?'background:#2563eb;color:#fff':''}" onclick="selectShelfIndex(${i})">Полка ${i + 1}</button>
+            <label class="inspector-row" style="flex:1;margin:0">Высота, мм
+              <input type="number" aria-label="shelf-z-${i}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${item.brand==='SE 750кг'?SHELF_STEP:1}" value="${z}" onchange="setShelfZ(${item.uid}, ${i}, this.value)">
+            </label>
+          </div>
+          <div class="note">Просвет сверху: <b>${clear} мм</b>${cargo.length?` · вещей: ${cargo.length}`:''}</div>
+          ${cargo.map(c => `
+            <div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:12px">
+              <span style="flex:1">${c.name} (${c.h} мм)${c.h>clear?' ⚠':''}</span>
+              <button class="btn" style="margin:0;padding:4px 8px" onclick="editCargoSize(${item.uid}, ${c.cid})">Размер</button>
+              <button class="btn danger" style="margin:0;padding:4px 8px" onclick="removeCargo(${item.uid}, ${c.cid})">✕</button>
+            </div>
+          `).join('') || '<div class="note">Пусто — добавьте из вкладки «На полку»</div>'}
+        </div>`;
+      }).join('')}
+      ${issues.length?issues.map(t=>`<div class="warn">${t}</div>`).join(''):(cargoCount?`<div class="ok">Все предметы помещаются по высоте и ширине полок.</div>`:'')}
+    </fieldset>`;
+}
+
+function setShelfCount(uid, value) {
+  const item = items.find(i => i.uid === uid);
+  if (!isShelfRack(item)) return;
+  const n = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Math.round(Number(value) || 5)));
+  item.shelves = n;
+  item.shelfZs = defaultShelfZs(item.h, n, item.brand);
+  ensureShelfLayout(item);
+  refreshAll();
+}
+
+function setShelfZ(uid, index, value) {
+  const item = items.find(i => i.uid === uid);
+  if (!isShelfRack(item)) return;
+  ensureShelfLayout(item);
+  if (index < 0 || index >= item.shelfZs.length) return;
+  item.shelfZs[index] = snapShelfZ(value, item.brand);
+  ensureShelfLayout(item);
+  refreshAll();
+}
+
+function redistributeShelves(uid) {
+  const item = items.find(i => i.uid === uid);
+  if (!isShelfRack(item)) return;
+  ensureShelfLayout(item);
+  item.shelfZs = defaultShelfZs(item.h, item.shelves, item.brand);
+  refreshAll();
+  toast('Высоты полок выровнены');
+}
+
+function removeCargo(rackUid, cid) {
+  const rack = items.find(i => i.uid === rackUid);
+  if (!rack?.contents) return;
+  rack.contents = rack.contents.filter(c => c.cid !== cid);
+  refreshAll();
+}
+
+function editCargoSize(rackUid, cid) {
+  const rack = items.find(i => i.uid === rackUid);
+  const cargo = rack?.contents?.find(c => c.cid === cid);
+  if (!cargo) return;
+  const w = prompt('Ширина предмета, мм', String(cargo.w));
+  if (w == null) return;
+  const d = prompt('Глубина предмета, мм', String(cargo.d));
+  if (d == null) return;
+  const h = prompt('Высота предмета, мм', String(cargo.h));
+  if (h == null) return;
+  const nw = Math.round(Number(w)), nd = Math.round(Number(d)), nh = Math.round(Number(h));
+  if (![nw, nd, nh].every(n => Number.isFinite(n) && n >= 1 && n <= 3000)) { toast('Некорректные размеры'); return; }
+  cargo.w = nw; cargo.d = nd; cargo.h = nh;
+  cargo.name = `Свой предмет ${nw}×${nd}×${nh}`;
+  refreshAll();
 }
 
 function setBikeMode(uid, mode) {
@@ -438,7 +695,7 @@ function render2D() {
         </text>
         <text x="${cx}" y="${cy + 45}" fill="#334155" font-size="42" text-anchor="middle" dominant-baseline="middle"
               transform="${isVert ? `rotate(-90 ${cx},${cy})` : ''}">
-          H=${item.h}
+          H=${item.h}${isShelfRack(item)?` · ${item.shelves||0}п${(item.contents||[]).length?`/${item.contents.length}`:''}`:''}
         </text>
       </g>
     `;
@@ -652,6 +909,11 @@ function openBomModal() {
       <td><b>${(g.price * g.count).toLocaleString('ru-RU')} ₽</b></td>
     </tr>
   `).join('');
+  const shelfRows = items.filter(isShelfRack).map(i => {
+    ensureShelfLayout(i);
+    const cargo = (i.contents || []).map(c => `${c.name} → полка ${c.shelfIndex + 1} (h${c.h})`).join('; ') || 'без вещей';
+    return `<tr><td colspan="4"><b>Стеллаж №${i.uid}</b>: ${i.shelves} полок на ${i.shelfZs.join('/')} мм. ${cargo}</td></tr>`;
+  }).join('');
 
   document.getElementById('bomBody').innerHTML = `
     <p><b>Помещение:</b> Кладовая 4.65 м² (Левая стена: 2860 мм, Верхняя: 1468 мм, Выступ: 311 мм, Правая: 1394 + 1466 = 2860 мм, Низ: 1779 мм).</p>
@@ -666,6 +928,7 @@ function openBomModal() {
       </thead>
       <tbody>
         ${rows || '<tr><td colspan="4">Список пуст</td></tr>'}
+        ${shelfRows}
       </tbody>
     </table>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
@@ -686,6 +949,11 @@ function copyBomText() {
   items.forEach((i, idx) => {
     total += i.price || 0;
     lines.push(`${idx+1}. ${i.name} (${i.w}x${i.d}x${i.h} мм) — Стена: ${WALL_INFO[i.wall].label}, отступ ${Math.round(i.offset)} мм — ${i.price.toLocaleString('ru-RU')} ₽`);
+    if (isShelfRack(i)) {
+      ensureShelfLayout(i);
+      lines.push(`   Полки (${i.shelves}): ${i.shelfZs.join(', ')} мм от низа`);
+      for (const c of i.contents || []) lines.push(`   · ${c.name} на полке ${c.shelfIndex + 1}, ${c.w}×${c.d}×${c.h} мм`);
+    }
   });
   lines.push(`ИТОГО: ${total.toLocaleString('ru-RU')} ₽`);
   lines.push('Цены справочные; крепёж, доставка и сборка не включены. Проверить фактические габариты, дверь и трассу трубы.');
@@ -729,16 +997,52 @@ function analyze(){
  return {warnings,freeArea:(ROOM_AREA-occupiedArea())/1e6};
 }
 function updateAnalysis(){
- const a=analyze();document.getElementById('layoutStats').innerHTML=`Пол: <b>${(ROOM_AREA/1e6).toFixed(2)} м²</b><br>Свободно на полу: <b>${a.freeArea.toFixed(2)} м²</b><br><span class="note">Без двойного учёта пересечений. Подвешенные предметы не занимают пол, но могут мешать проходу. Зелёные линии — просветы в двух сечениях, не гарантия проходимости.</span>`;
- const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
+ const a=analyze();
+ const shelfStats=items.filter(isShelfRack).map(i=>{ensureShelfLayout(i);return `№${i.uid}: ${i.shelves} полок${(i.contents||[]).length?`, вещей ${(i.contents||[]).length}`:''}`;});
+ document.getElementById('layoutStats').innerHTML=`Пол: <b>${(ROOM_AREA/1e6).toFixed(2)} м²</b><br>Свободно на полу: <b>${a.freeArea.toFixed(2)} м²</b>${shelfStats.length?`<br>Стеллажи: ${shelfStats.join('; ')}`:''}<br><span class="note">Без двойного учёта пересечений. Подвешенные предметы не занимают пол, но могут мешать проходу. Зелёные линии — просветы в двух сечениях, не гарантия проходимости.</span>`;
+ const node=document.getElementById('warnings');node.replaceChildren();for(const warning of a.warnings){const el=document.createElement('div');el.className='warn';el.textContent=warning;node.append(el);}if(!a.warnings.length)node.innerHTML='<div class="ok">Пересечений и выхода за стены нет.</div>';
+ for(const i of items.filter(isShelfRack)){for(const issue of shelfIssues(i)){const el=document.createElement('div');el.className='warn';el.textContent=`Стеллаж №${i.uid}: ${issue}`;node.append(el);}}
+ for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
-function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));refreshAll();}
-function snapshot(){return {version:1,bikeMeasurements:2,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150}))};}
+function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));if(isShelfRack(item)&&key==='h')ensureShelfLayout(item);refreshAll();}
+function snapshot(){return {version:1,bikeMeasurements:2,shelfLayout:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150,shelves:i.shelves||0,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.map(Number):undefined,contents:Array.isArray(i.contents)?i.contents.map(c=>({cid:c.cid,modelId:c.modelId,name:c.name,w:c.w,d:c.d,h:c.h,color:c.color,shelfIndex:c.shelfIndex})):[]}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
  if(!data||data.version!==1||!Array.isArray(data.items)||data.items.length>100)throw Error('Неизвестный формат проекта или более 100 объектов.');
- const parsed=data.items.map((r,k)=>{const m=findCatalogModel(r.modelId);if(!m||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki};for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}for(const [key,fallback] of [['bikeLength',1700],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}i.free=!!r.free;for(const key of ['x','y']){const n=Number(r[key]??0);if(!Number.isFinite(n)||Math.abs(n)>10000)throw Error('Некорректная позиция.');i[key]=n;}i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}return i;});
- const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');items=parsed;ceilingHeight=h;nextUid=items.length+1;selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
+ const parsed=data.items.map((r,k)=>{
+  const m=findCatalogModel(r.modelId);if(!m||m.isCargo||!Object.hasOwn(WALL_INFO,r.wall))throw Error('Неизвестная модель или стена.');
+  const i={...m,modelId:m.id,uid:k+1,wall:r.wall,isBike:!!m.isBike,isSki:!!m.isSki,isLadder:!!m.isLadder};
+  for(const key of ['offset','w','d','h','z','gap']){const n=Number(r[key]??(key==='z'||key==='gap'?0:m[key]));if(!Number.isFinite(n)||Math.abs(n)>10000||(key!=='offset'&&n<0)||(['w','d','h'].includes(key)&&n<1))throw Error('Некорректные размеры.');i[key]=n;}
+  for(const [key,fallback] of [['bikeLength',1700],['handlingSpace',600],['liftSpace',150]]){const n=Number(r[key]??fallback);if(!Number.isFinite(n)||n<0||n>5000)throw Error('Некорректная зона снятия.');i[key]=n;}
+  i.free=!!r.free;for(const key of ['x','y']){const n=Number(r[key]??0);if(!Number.isFinite(n)||Math.abs(n)>10000)throw Error('Некорректная позиция.');i[key]=n;}
+  i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;
+  i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;
+  if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}
+  if(isShelfRack(i)){
+   const shelfN=Number(r.shelves??m.shelves??5);
+   if(!Number.isFinite(shelfN)||shelfN<SHELF_MIN||shelfN>SHELF_MAX)throw Error('Некорректное число полок.');
+   i.shelves=shelfN;
+   if(Array.isArray(r.shelfZs)&&r.shelfZs.length===shelfN){
+    i.shelfZs=r.shelfZs.map(Number);
+    if(i.shelfZs.some(z=>!Number.isFinite(z)||z<0||z>5000))throw Error('Некорректные высоты полок.');
+   }else i.shelfZs=defaultShelfZs(i.h,shelfN,i.brand);
+   i.contents=[];
+   if(Array.isArray(r.contents)){
+    if(r.contents.length>40)throw Error('Слишком много предметов на стеллаже.');
+    for(const c of r.contents){
+     const cw=Number(c.w),cd=Number(c.d),ch=Number(c.h),si=Number(c.shelfIndex??0);
+     if(![cw,cd,ch].every(n=>Number.isFinite(n)&&n>=1&&n<=3000)||!Number.isFinite(si)||si<0||si>=shelfN)throw Error('Некорректный предмет на полке.');
+     i.contents.push({cid:Number(c.cid)||nextCargoId++,modelId:c.modelId||'custom_cargo',name:String(c.name||'Предмет').slice(0,80),w:cw,d:cd,h:ch,color:c.color||'#64748b',shelfIndex:si});
+    }
+   }
+   ensureShelfLayout(i);
+  }
+  return i;
+ });
+ const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');
+ items=parsed;ceilingHeight=h;nextUid=items.length+1;
+ nextCargoId=Math.max(1,...items.flatMap(i=>(i.contents||[]).map(c=>c.cid+1)),1);
+ selectedId=null;document.getElementById('ceilVal').textContent=h;document.querySelector('[oninput="updateCeiling(this.value)"]').value=h;refreshAll();
 }
 async function restorePlan(){try{if(location.hash.startsWith('#planz=')){loadSnapshot(await decodeCompressedPlan(location.hash.slice(7)));return true;}if(location.hash.startsWith('#plan=')){loadSnapshot(JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(6))))));return true;}const raw=localStorage.getItem(STORE_KEY);if(raw){loadSnapshot(JSON.parse(raw));return true;}}catch(e){toast('Не удалось открыть сохранённый проект: '+e.message);}return false;}
 function download(name,text,type){const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
@@ -753,7 +1057,7 @@ function placedSize(i){return (i.rotation||0)%180===90?{w:i.d,d:i.w}:{w:i.w,d:i.
 function bikeHeading(i){const base=i.bikeMode==='vert'?(i.wall==='top'?90:0):(i.wall==='top'?0:90);return (base+(i.rotation||0))%360;}
 window.bikeHeading=bikeHeading;
 function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();const old=getItemRect(i);i.rotation=((i.rotation||0)+90)%360;if(i.free){const next=getItemRect(i);i.x=old.x+(old.width-next.width)/2;i.y=old.y+(old.height-next.height)/2;}selectedId=uid;refreshAll();}
-function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
+function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.slice():null,contents:Array.isArray(i.contents)?i.contents.map(c=>({...c,cid:nextCargoId++})):[]};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}if(isShelfRack(copy))ensureShelfLayout(copy);items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
 function placeObjectMenu(menu,x,y){
   document.body.append(menu);
@@ -816,6 +1120,11 @@ function openObjectMenu(uid,x,y){
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 window.openRackSizeMenu=openRackSizeMenu;window.setRackDimension=setRackDimension;
 window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.makeSeModel=makeSeModel;
+window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
+window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
+window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
+window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;
+window.defaultShelfZs=defaultShelfZs;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
 
 // Conservative handling envelope, separate from the stored object and floor area.
