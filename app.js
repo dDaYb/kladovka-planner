@@ -2,12 +2,33 @@
 // ==========================================
 // 1. КАТАЛОГ МОДЕЛЕЙ (SE 750кг, Лемана ПРО, Велосипеды)
 // ==========================================
+// Сетка SE 750кг по СтелТех: высота в планировщике только 3000 мм.
+const SE_HEIGHT = 3000;
+const SE_WIDTHS = [700, 900, 1000, 1200, 1500];
+const SE_DEPTHS = [300, 400, 500, 600, 700, 800];
+const SE_PRICES = { '1200_500': 10631, '900_500': 9041, '700_400': 6916, '700_300': 6346 };
+const SE_COLORS = { 300: '#0369a1', 400: '#0284c7', 500: '#2563eb', 600: '#1d4ed8', 700: '#1e40af', 800: '#172554' };
+function makeSeModel(w, d) {
+  return {
+    id: `se_${w}_${d}`,
+    brand: 'SE 750кг',
+    name: `Стеллаж SE ${SE_HEIGHT}×${w}×${d}`,
+    w, d, h: SE_HEIGHT, shelves: 5,
+    price: SE_PRICES[`${w}_${d}`] || 0,
+    color: SE_COLORS[d] || '#2563eb'
+  };
+}
+// Быстрый каталог: сметные позиции + глубины 600/700/800 и ширина 1000.
 const CATALOG = {
   se: [
-    { id: 'se_1200_500', brand: 'SE 750кг', name: 'Стеллаж SE 3000×1200×500', w: 1200, d: 500, h: 3000, shelves: 5, price: 10631, color: '#2563eb' },
-    { id: 'se_900_500',  brand: 'SE 750кг', name: 'Стеллаж SE 3000×900×500',  w: 900,  d: 500, h: 3000, shelves: 5, price: 9041,  color: '#1d4ed8' },
-    { id: 'se_700_400',  brand: 'SE 750кг', name: 'Стеллаж SE 3000×700×400',  w: 700,  d: 400, h: 3000, shelves: 5, price: 6916,  color: '#0284c7' },
-    { id: 'se_700_300',  brand: 'SE 750кг', name: 'Стеллаж SE 3000×700×300',  w: 700,  d: 300, h: 3000, shelves: 5, price: 6346,  color: '#0369a1' }
+    makeSeModel(1200, 500),
+    makeSeModel(900, 500),
+    makeSeModel(1000, 500),
+    makeSeModel(700, 400),
+    makeSeModel(700, 300),
+    makeSeModel(1200, 600), makeSeModel(900, 600), makeSeModel(1000, 600), makeSeModel(700, 600),
+    makeSeModel(1200, 700), makeSeModel(900, 700), makeSeModel(1000, 700), makeSeModel(700, 700),
+    makeSeModel(1200, 800), makeSeModel(900, 800), makeSeModel(1000, 800), makeSeModel(700, 800)
   ],
   lm: [
     { id: 'lm_1000_500', brand: 'Лемана ПРО', name: 'Практик/Stynergy 2000×1000×500 (арт. 82285507)', w: 1000, d: 500, h: 2000, shelves: 5, price: 5510, color: '#16a34a' },
@@ -53,7 +74,50 @@ function findCatalogModel(modelId) {
     const found = CATALOG[k].find(m => m.id === modelId);
     if (found) return found;
   }
+  const se = /^se_(\d+)_(\d+)$/.exec(modelId || '');
+  if (se) {
+    const w = Number(se[1]), d = Number(se[2]);
+    if (SE_WIDTHS.includes(w) && SE_DEPTHS.includes(d)) return makeSeModel(w, d);
+  }
   return null;
+}
+
+function isShelfRack(item) {
+  return !!(item && !item.isBike && !item.isSki && !item.isLadder);
+}
+
+function rackSizeOptions(item, key) {
+  if (item.brand === 'SE 750кг') return key === 'w' ? SE_WIDTHS.slice() : SE_DEPTHS.slice();
+  const sizes = new Set();
+  for (const list of Object.values(CATALOG)) {
+    for (const m of list) {
+      if (m.brand === item.brand && !m.isBike && !m.isSki && !m.isLadder) sizes.add(m[key]);
+    }
+  }
+  sizes.add(item[key]);
+  return [...sizes].sort((a, b) => a - b);
+}
+
+function setRackDimension(uid, key, value) {
+  const item = items.find(i => i.uid === uid);
+  if (!isShelfRack(item) || !['w', 'd'].includes(key)) return;
+  const n = Number(value);
+  if (!Number.isFinite(n) || !rackSizeOptions(item, key).includes(n)) return;
+  closeObjectMenu();
+  item[key] = n;
+  if (item.brand === 'SE 750кг') {
+    const m = makeSeModel(item.w, item.d);
+    Object.assign(item, { modelId: m.id, name: m.name, h: m.h, shelves: m.shelves, price: m.price, color: m.color });
+  } else {
+    const match = Object.values(CATALOG).flat().find(m => m.brand === item.brand && m.w === item.w && m.d === item.d && !m.isBike && !m.isSki && !m.isLadder);
+    if (match) Object.assign(item, { modelId: match.id, name: match.name, h: match.h, shelves: match.shelves, price: match.price, color: match.color });
+  }
+  if (!item.free) {
+    const max = WALL_INFO[item.wall].maxLen - placedSize(item).w;
+    item.offset = Math.max(0, Math.min(item.offset, Math.max(0, max)));
+  }
+  selectedId = uid;
+  refreshAll();
 }
 
 // Вычисление мировых 2D координат прямоугольника объекта (x, y, width, height)
@@ -673,8 +737,67 @@ window.bikeHeading=bikeHeading;
 function rotateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;closeObjectMenu();const old=getItemRect(i);i.rotation=((i.rotation||0)+90)%360;if(i.free){const next=getItemRect(i);i.x=old.x+(old.width-next.width)/2;i.y=old.y+(old.height-next.height)/2;}selectedId=uid;refreshAll();}
 function duplicateItem(uid){const i=items.find(i=>i.uid===uid);if(!i)return;if(items.length>=100){toast('В проекте не более 100 объектов');return;}closeObjectMenu();const copy={...i,uid:nextUid++,offset:i.offset+placedSize(i).w+20};const max=WALL_INFO[i.wall].maxLen-placedSize(i).w;if(copy.offset>max)copy.offset=Math.max(0,i.offset-placedSize(i).w-20);if(copy.free){copy.x=(i.x||0)+100;copy.y=(i.y||0)+100;}items.push(copy);selectedId=copy.uid;refreshAll();toast('Копия создана. Проверьте пересечения и отступы.');}
 function closeObjectMenu(){document.getElementById('objectMenu')?.remove();}
-function openObjectMenu(uid,x,y){if(!items.some(i=>i.uid===uid))return;closeObjectMenu();selectedId=uid;refreshAll();const menu=document.createElement('div');menu.id='objectMenu';menu.setAttribute('role','menu');menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';const item=items.find(i=>i.uid===uid);const bikeActions=item.isBike?(item.bikeMode==='vert'?[['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]]:[['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]]):[];for(const [label,fn] of [...bikeActions,['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]]){const b=document.createElement('button');b.className='btn';b.setAttribute('role','menuitem');b.textContent=label;b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';b.onclick=()=>fn(uid);menu.append(b);}document.body.append(menu);menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.firstChild.focus();}
+function placeObjectMenu(menu,x,y){
+  document.body.append(menu);
+  menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';
+  menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';
+  menu.querySelector('[role="menuitem"]')?.focus();
+}
+function menuButton(label,onClick){
+  const b=document.createElement('button');
+  b.className='btn';
+  b.setAttribute('role','menuitem');
+  b.textContent=label;
+  b.style.cssText='display:block;width:100%;text-align:left;margin:3px 0';
+  b.onclick=onClick;
+  return b;
+}
+function openRackSizeMenu(uid,key,x,y){
+  const item=items.find(i=>i.uid===uid);
+  if(!isShelfRack(item))return;
+  closeObjectMenu();
+  selectedId=uid;
+  refreshAll();
+  const menu=document.createElement('div');
+  menu.id='objectMenu';
+  menu.setAttribute('role','menu');
+  menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;max-height:min(70vh,420px);overflow:auto';
+  const title=key==='w'?'Ширина':'Глубина';
+  menu.append(menuButton(`← Назад`,()=>openObjectMenu(uid,x,y)));
+  const note=document.createElement('div');
+  note.className='note';
+  note.style.cssText='padding:4px 6px;margin:2px 0';
+  note.textContent=`${title} сейчас: ${item[key]} мм`;
+  menu.append(note);
+  for(const size of rackSizeOptions(item,key)){
+    const current=size===item[key];
+    menu.append(menuButton(`${current?'✓ ':'  '}${size} мм`,()=>setRackDimension(uid,key,size)));
+  }
+  placeObjectMenu(menu,x,y);
+}
+function openObjectMenu(uid,x,y){
+  if(!items.some(i=>i.uid===uid))return;
+  closeObjectMenu();
+  selectedId=uid;
+  refreshAll();
+  const menu=document.createElement('div');
+  menu.id='objectMenu';
+  menu.setAttribute('role','menu');
+  menu.style.cssText='position:fixed;z-index:100;background:white;border:1px solid #cbd5e1;border-radius:10px;padding:6px;box-shadow:0 10px 30px #172b4533;min-width:220px;';
+  const item=items.find(i=>i.uid===uid);
+  const actions=[];
+  if(item.isBike)actions.push(item.bikeMode==='vert'?['Поставить велосипед на пол',id=>setBikeMode(id,'floor')]:['Подвесить на стену колесом вверх',id=>setBikeMode(id,'vert')]);
+  if(isShelfRack(item)){
+    actions.push([`Ширина: ${item.w} мм…`,id=>openRackSizeMenu(id,'w',x,y)]);
+    actions.push([`Глубина: ${item.d} мм…`,id=>openRackSizeMenu(id,'d',x,y)]);
+  }
+  actions.push(['↻ Повернуть на 90°',rotateItem],['＋ Создать копию',duplicateItem],['Удалить',id=>{closeObjectMenu();deleteItem(id);}]);
+  for(const [label,fn] of actions)menu.append(menuButton(label,()=>fn(uid)));
+  placeObjectMenu(menu,x,y);
+}
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
+window.openRackSizeMenu=openRackSizeMenu;window.setRackDimension=setRackDimension;
+window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.makeSeModel=makeSeModel;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
 
 // Conservative handling envelope, separate from the stored object and floor area.
