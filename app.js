@@ -2,12 +2,35 @@
 // ==========================================
 // 1. КАТАЛОГ МОДЕЛЕЙ (SE 750кг, Лемана ПРО, Велосипеды)
 // ==========================================
-// Сетка SE 750кг по СтелТех: высота в планировщике только 3000 мм.
+// Сетка SE 750кг по СтелТех: высота в планировщике только 3000 мм, 5 полок SE-140.
+// Цены: стойки 3276 ₽ + 5× полка SE-140 (актуально на stel-teh.ru). Совпадают с исходной сметой.
+// Глубина 700 мм есть только при ширине ≥ 900; комбинации 700×700 у производителя нет.
 const SE_HEIGHT = 3000;
+const SE_POSTS_PRICE = 3276;
 const SE_WIDTHS = [700, 900, 1000, 1200, 1500];
 const SE_DEPTHS = [300, 400, 500, 600, 700, 800];
-const SE_PRICES = { '1200_500': 10631, '900_500': 9041, '700_400': 6916, '700_300': 6346 };
+const SE_DEPTHS_BY_WIDTH = {
+  700: [300, 400, 500, 600, 800],
+  900: [300, 400, 500, 600, 700, 800],
+  1000: [300, 400, 500, 600, 700, 800],
+  1200: [300, 400, 500, 600, 700, 800],
+  1500: [300, 400, 500, 600, 700, 800]
+};
+// Стойки 3276 + 5×SE-140; проверено: 700×300=6346, 700×400=6916, 900×500=9041, 1200×500=10631.
+const SE_PRICES = {
+  '700_300': 6346, '700_400': 6916, '700_500': 7506, '700_600': 8356, '700_800': 9831,
+  '900_300': 7266, '900_400': 7706, '900_500': 9041, '900_600': 9951, '900_700': 10926, '900_800': 11986,
+  '1000_300': 7141, '1000_400': 7846, '1000_500': 8736, '1000_600': 9626, '1000_700': 11011, '1000_800': 11576,
+  '1200_300': 8541, '1200_400': 9461, '1200_500': 10631, '1200_600': 11766, '1200_700': 13371, '1200_800': 14346,
+  '1500_500': 12331, '1500_600': 14421, '1500_700': 15291, '1500_800': 15931
+};
 const SE_COLORS = { 300: '#0369a1', 400: '#0284c7', 500: '#2563eb', 600: '#1d4ed8', 700: '#1e40af', 800: '#172554' };
+function seDepthsForWidth(w) {
+  return (SE_DEPTHS_BY_WIDTH[w] || SE_DEPTHS).slice();
+}
+function isSeSize(w, d) {
+  return SE_WIDTHS.includes(w) && seDepthsForWidth(w).includes(d);
+}
 function makeSeModel(w, d) {
   return {
     id: `se_${w}_${d}`,
@@ -18,7 +41,7 @@ function makeSeModel(w, d) {
     color: SE_COLORS[d] || '#2563eb'
   };
 }
-// Быстрый каталог: сметные позиции + глубины 600/700/800 и ширина 1000.
+// Быстрый каталог: сметные позиции + глубины 600/700/800 (700 — только где есть у СтелТех).
 const CATALOG = {
   se: [
     makeSeModel(1200, 500),
@@ -27,7 +50,7 @@ const CATALOG = {
     makeSeModel(700, 400),
     makeSeModel(700, 300),
     makeSeModel(1200, 600), makeSeModel(900, 600), makeSeModel(1000, 600), makeSeModel(700, 600),
-    makeSeModel(1200, 700), makeSeModel(900, 700), makeSeModel(1000, 700), makeSeModel(700, 700),
+    makeSeModel(1200, 700), makeSeModel(900, 700), makeSeModel(1000, 700),
     makeSeModel(1200, 800), makeSeModel(900, 800), makeSeModel(1000, 800), makeSeModel(700, 800)
   ],
   lm: [
@@ -270,7 +293,7 @@ function findCatalogModel(modelId) {
   const se = /^se_(\d+)_(\d+)$/.exec(modelId || '');
   if (se) {
     const w = Number(se[1]), d = Number(se[2]);
-    if (SE_WIDTHS.includes(w) && SE_DEPTHS.includes(d)) return makeSeModel(w, d);
+    if (isSeSize(w, d)) return makeSeModel(w, d);
   }
   return null;
 }
@@ -280,7 +303,10 @@ function isShelfRack(item) {
 }
 
 function rackSizeOptions(item, key) {
-  if (item.brand === 'SE 750кг') return key === 'w' ? SE_WIDTHS.slice() : SE_DEPTHS.slice();
+  if (item.brand === 'SE 750кг') {
+    if (key === 'w') return SE_WIDTHS.slice();
+    return seDepthsForWidth(item.w);
+  }
   const sizes = new Set();
   for (const list of Object.values(CATALOG)) {
     for (const m of list) {
@@ -299,6 +325,11 @@ function setRackDimension(uid, key, value) {
   closeObjectMenu();
   item[key] = n;
   if (item.brand === 'SE 750кг') {
+    // При смене ширины глубина 700 может стать недоступной — берём ближайшую допустимую.
+    if (!isSeSize(item.w, item.d)) {
+      const depths = seDepthsForWidth(item.w);
+      item.d = depths.reduce((best, d) => Math.abs(d - item.d) < Math.abs(best - item.d) ? d : best, depths[0]);
+    }
     const m = makeSeModel(item.w, item.d);
     Object.assign(item, { modelId: m.id, name: m.name, h: m.h, price: m.price, color: m.color });
   } else {
@@ -502,7 +533,7 @@ function renderCatalog() {
           <div class="catalog-item-name">${m.name}</div>
           <div class="catalog-item-sub">Габариты: ${m.w}×${m.d} мм • Высота: ${m.h} мм</div>
         </div>
-        <div class="catalog-item-price">${m.price > 0 ? m.price.toLocaleString('ru-RU') + ' ₽' : 'Свой'}</div>
+        <div class="catalog-item-price">${m.price > 0 ? m.price.toLocaleString('ru-RU') + ' ₽' : (m.brand === 'SE 750кг' ? 'уточнить' : 'Свой')}</div>
       </div>
       <div class="wall-add-btns">
         <button onclick="addItem('${m.id}', 'left', 0)">+ Левая</button>
@@ -1517,7 +1548,8 @@ function openObjectMenu(uid,x,y){
 }
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 window.openRackSizeMenu=openRackSizeMenu;window.setRackDimension=setRackDimension;
-window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.makeSeModel=makeSeModel;
+window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.SE_PRICES=SE_PRICES;window.SE_POSTS_PRICE=SE_POSTS_PRICE;
+window.seDepthsForWidth=seDepthsForWidth;window.isSeSize=isSeSize;window.makeSeModel=makeSeModel;
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
