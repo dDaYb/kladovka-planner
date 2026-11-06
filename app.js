@@ -2,11 +2,12 @@
 // ==========================================
 // 1. КАТАЛОГ МОДЕЛЕЙ (SE 750кг, Лемана ПРО, Велосипеды)
 // ==========================================
-// Сетка SE 750кг по СтелТех: высота в планировщике только 3000 мм, 5 полок SE-140.
-// Цены: стойки 3276 ₽ + 5× полка SE-140 (актуально на stel-teh.ru). Совпадают с исходной сметой.
+// Сетка SE 750кг по СтелТех: высота в планировщике только 3000 мм, полки SE-140.
+// Цена стеллажа = стойки 3276 ₽ + N× полка SE-140 (цены с stel-teh.ru, раздел комплектующих).
 // Глубина 700 мм есть только при ширине ≥ 900; комбинации 700×700 у производителя нет.
 const SE_HEIGHT = 3000;
 const SE_POSTS_PRICE = 3276;
+const SE_DEFAULT_SHELVES = 5;
 const SE_WIDTHS = [700, 900, 1000, 1200, 1500];
 const SE_DEPTHS = [300, 400, 500, 600, 700, 800];
 const SE_DEPTHS_BY_WIDTH = {
@@ -16,14 +17,28 @@ const SE_DEPTHS_BY_WIDTH = {
   1200: [300, 400, 500, 600, 700, 800],
   1500: [300, 400, 500, 600, 700, 800]
 };
-// Стойки 3276 + 5×SE-140; проверено: 700×300=6346, 700×400=6916, 900×500=9041, 1200×500=10631.
-const SE_PRICES = {
-  '700_300': 6346, '700_400': 6916, '700_500': 7506, '700_600': 8356, '700_800': 9831,
-  '900_300': 7266, '900_400': 7706, '900_500': 9041, '900_600': 9951, '900_700': 10926, '900_800': 11986,
-  '1000_300': 7141, '1000_400': 7846, '1000_500': 8736, '1000_600': 9626, '1000_700': 11011, '1000_800': 11576,
-  '1200_300': 8541, '1200_400': 9461, '1200_500': 10631, '1200_600': 11766, '1200_700': 13371, '1200_800': 14346,
-  '1500_500': 12331, '1500_600': 14421, '1500_700': 15291, '1500_800': 15931
+// Цена одной полки SE-140 (W×D), ₽ — с карточек stel-teh.ru / stellazh_se_komplektuyushchie.
+const SE_SHELF_PRICES = {
+  '700_300': 614, '700_400': 728, '700_500': 846, '700_600': 1016, '700_800': 1311,
+  '900_300': 798, '900_400': 886, '900_500': 1153, '900_600': 1335, '900_700': 1530, '900_800': 1742,
+  '1000_300': 773, '1000_400': 914, '1000_500': 1092, '1000_600': 1270, '1000_700': 1547, '1000_800': 1660,
+  '1200_300': 1053, '1200_400': 1237, '1200_500': 1471, '1200_600': 1698, '1200_700': 2019, '1200_800': 2214,
+  '1500_500': 1811, '1500_600': 2229, '1500_700': 2403, '1500_800': 2531
 };
+// Доставка СтелТех (stel-teh.ru/shipping-and-payment/), Москва/МО до 1000 кг или 7 м³.
+const STELTECH_DELIVERY = {
+  source: 'https://stel-teh.ru/shipping-and-payment/',
+  zones: [
+    { id: 'none', label: 'Без доставки / самовывоз', price: 0 },
+    { id: 'mkad', label: 'Москва в пределах МКАД', price: 1350 },
+    { id: 'mkad10', label: 'до 10 км от МКАД', price: 1970 },
+    { id: 'mkad25', label: '10–25 км от МКАД', price: 3430 },
+    { id: 'mkad50', label: '25–50 км от МКАД', price: 5950 },
+    { id: 'mkad50p', label: 'более 50 км от МКАД (от)', price: 8150 },
+    { id: 'tk', label: 'До терминала ТК в Москве', price: 1850 }
+  ]
+};
+let deliveryZoneId = 'none';
 const SE_COLORS = { 300: '#0369a1', 400: '#0284c7', 500: '#2563eb', 600: '#1d4ed8', 700: '#1e40af', 800: '#172554' };
 function seDepthsForWidth(w) {
   return (SE_DEPTHS_BY_WIDTH[w] || SE_DEPTHS_BY_WIDTH[700]).slice();
@@ -38,22 +53,52 @@ function nearestSeDepth(w, d) {
   const depths = seDepthsForWidth(w);
   return depths.reduce((best, x) => Math.abs(x - d) < Math.abs(best - d) ? x : best, depths[0]);
 }
-function makeSeModel(w, d) {
+function seShelfUnitPrice(w, d) {
+  return SE_SHELF_PRICES[`${Number(w)}_${Number(d)}`] || 0;
+}
+function seRackPrice(w, d, shelves = SE_DEFAULT_SHELVES) {
+  const unit = seShelfUnitPrice(w, d);
+  if (!unit) return 0;
+  const n = Math.max(0, Math.round(Number(shelves) || 0));
+  return SE_POSTS_PRICE + n * unit;
+}
+/** Комплект на 5 полок SE-140 (для подсказок в меню размеров). */
+const SE_PRICES = Object.fromEntries(
+  Object.keys(SE_SHELF_PRICES).map(k => {
+    const [w, d] = k.split('_').map(Number);
+    return [k, seRackPrice(w, d, SE_DEFAULT_SHELVES)];
+  })
+);
+function deliveryZone() {
+  return STELTECH_DELIVERY.zones.find(z => z.id === deliveryZoneId) || STELTECH_DELIVERY.zones[0];
+}
+function deliveryPrice() {
+  return deliveryZone().price || 0;
+}
+function setDeliveryZone(id) {
+  if (!STELTECH_DELIVERY.zones.some(z => z.id === id)) return;
+  deliveryZoneId = id;
+  refreshAll();
+  if (document.getElementById('bomModal')?.classList.contains('open')) openBomModal();
+}
+function makeSeModel(w, d, shelves = SE_DEFAULT_SHELVES) {
   const width = SE_WIDTHS.includes(w) ? w : nearestSeWidth(w);
   const depth = isSeSize(width, d) ? d : nearestSeDepth(width, d);
+  const n = Math.max(2, Math.min(8, Math.round(Number(shelves) || SE_DEFAULT_SHELVES)));
   return {
     id: `se_${width}_${depth}`,
     brand: 'SE 750кг',
     name: `Стеллаж SE ${SE_HEIGHT}×${width}×${depth}`,
-    w: width, d: depth, h: SE_HEIGHT, shelves: 5,
-    price: SE_PRICES[`${width}_${depth}`] || 0,
+    w: width, d: depth, h: SE_HEIGHT, shelves: n,
+    price: seRackPrice(width, depth, n),
     color: SE_COLORS[depth] || '#2563eb'
   };
 }
 /** Приводит SE-стеллаж к размеру, который есть в продаже у СтелТех. */
 function normalizeBuyableRack(item) {
   if (!item || item.brand !== 'SE 750кг') return item;
-  const m = makeSeModel(item.w, item.d);
+  const shelves = item.shelves || SE_DEFAULT_SHELVES;
+  const m = makeSeModel(item.w, item.d, shelves);
   Object.assign(item, {
     modelId: m.id,
     name: m.name,
@@ -62,7 +107,7 @@ function normalizeBuyableRack(item) {
     h: m.h,
     price: m.price,
     color: m.color,
-    shelves: item.shelves || m.shelves
+    shelves: m.shelves
   });
   return item;
 }
@@ -755,6 +800,7 @@ function renderShelfInspector(item) {
         </label>
         <button type="button" class="btn" onclick="redistributeShelves(${item.uid})">Выровнять высоты</button>
       </div>
+      ${item.brand==='SE 750кг'?`<div class="note">Цена: стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${item.shelves}× SE-140 ${seShelfUnitPrice(item.w,item.d).toLocaleString('ru-RU')} ₽ = <b>${(item.price||0).toLocaleString('ru-RU')} ₽</b></div>`:''}
       <div class="shelf-chip-row" role="tablist" aria-label="Полки стеллажа">${shelfChips}</div>
       <div class="shelf-active">
         <label class="inspector-row">Высота полки ${active + 1}, мм от низа
@@ -776,6 +822,9 @@ function setShelfCount(uid, value) {
   const n = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Math.round(Number(value) || 5)));
   item.shelves = n;
   item.shelfZs = defaultShelfZs(item.h, n, item.brand);
+  if (item.brand === 'SE 750кг') {
+    item.price = seRackPrice(item.w, item.d, n);
+  }
   ensureShelfLayout(item);
   refreshAll();
 }
@@ -1302,8 +1351,14 @@ window.selectPlannerItem=(uid, cargoId)=>{
   refreshAll();
 };
 window.selectPlannerCargo=(uid, cargoId)=>window.selectPlannerItem(uid, cargoId);
+function itemsSubtotal() {
+  return items.reduce((sum, i) => sum + (i.price || 0), 0);
+}
+function projectTotal() {
+  return itemsSubtotal() + deliveryPrice();
+}
 function updateHeaderSummary() {
-  const total = items.reduce((sum, i) => sum + (i.price || 0), 0);
+  const total = projectTotal();
   document.getElementById('headerCount').textContent = `${items.length} поз.`;
   document.getElementById('headerTotal').textContent = `${total.toLocaleString('ru-RU')} ₽`;
 }
@@ -1338,29 +1393,39 @@ function setViewMode(mode) {
 
 function openBomModal() {
   const grouped = {};
-  let total = 0;
   items.forEach(i => {
-    total += i.price || 0;
-    const key = `${i.modelId}_${i.wall}`;
+    const key = `${i.modelId}_${i.wall}_${i.shelves || 0}_${i.price || 0}`;
     if (!grouped[key]) {
       grouped[key] = { ...i, count: 0 };
     }
     grouped[key].count++;
   });
 
-  const rows = Object.values(grouped).map(g => `
+  const rows = Object.values(grouped).map(g => {
+    const seUnit = g.brand === 'SE 750кг' ? seShelfUnitPrice(g.w, g.d) : 0;
+    const detail = g.brand === 'SE 750кг' && seUnit
+      ? `<br><span style="color:#64748b;font-size:11px;">стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${g.shelves}× полка SE-140 ${seUnit.toLocaleString('ru-RU')} ₽</span>`
+      : `<br><span style="color:#64748b;font-size:11px;">${g.brand} • ${g.w}×${g.d}×${g.h} мм</span>`;
+    return `
     <tr>
-      <td><b>${g.name}</b><br><span style="color:#64748b;font-size:11px;">${g.brand} • ${g.w}×${g.d}×${g.h} мм</span></td>
+      <td><b>${g.name}</b>${detail}</td>
       <td>${WALL_INFO[g.wall].label}</td>
       <td>${g.count} шт.</td>
       <td><b>${(g.price * g.count).toLocaleString('ru-RU')} ₽</b></td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
   const shelfRows = items.filter(isShelfRack).map(i => {
     ensureShelfLayout(i);
     const cargo = (i.contents || []).map(c => `${c.name} → полка ${c.shelfIndex + 1} (h${c.h})`).join('; ') || 'без вещей';
     return `<tr><td colspan="4"><b>Стеллаж №${i.uid}</b>: ${i.shelves} полок на ${i.shelfZs.join('/')} мм. ${cargo}</td></tr>`;
   }).join('');
+  const zone = deliveryZone();
+  const goods = itemsSubtotal();
+  const ship = deliveryPrice();
+  const total = goods + ship;
+  const deliveryOpts = STELTECH_DELIVERY.zones.map(z =>
+    `<option value="${z.id}" ${z.id === deliveryZoneId ? 'selected' : ''}>${z.label}${z.price ? ` — ${z.price.toLocaleString('ru-RU')} ₽` : ''}</option>`
+  ).join('');
 
   document.getElementById('bomBody').innerHTML = `
     <p><b>Помещение:</b> Кладовая 4.65 м² (Левая стена: 2860 мм, Верхняя: 1468 мм, Выступ: 311 мм, Правая: 1394 + 1466 = 2860 мм, Низ: 1779 мм).</p>
@@ -1376,10 +1441,22 @@ function openBomModal() {
       <tbody>
         ${rows || '<tr><td colspan="4">Список пуст</td></tr>'}
         ${shelfRows}
+        <tr>
+          <td colspan="3"><b>Доставка СтелТех</b><br>
+            <span style="color:#64748b;font-size:11px;">тарифы с <a href="${STELTECH_DELIVERY.source}" target="_blank" rel="noopener">stel-teh.ru/shipping-and-payment</a> (Москва/МО до 1000 кг / 7 м³; подъём и перенос отдельно)</span>
+            <label class="inspector-row" style="margin-top:6px">Зона
+              <select aria-label="delivery" onchange="setDeliveryZone(this.value)">${deliveryOpts}</select>
+            </label>
+          </td>
+          <td><b>${ship.toLocaleString('ru-RU')} ₽</b></td>
+        </tr>
       </tbody>
     </table>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-      <div style="font-size:16px; font-weight:700;">ИТОГО: ${total.toLocaleString('ru-RU')} ₽</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:12px; flex-wrap:wrap;">
+      <div>
+        <div class="note">Товары: ${goods.toLocaleString('ru-RU')} ₽ · ${zone.label}: ${ship.toLocaleString('ru-RU')} ₽</div>
+        <div style="font-size:16px; font-weight:700;">ИТОГО: ${total.toLocaleString('ru-RU')} ₽</div>
+      </div>
       <button class="btn primary" onclick="copyBomText()">📋 Скопировать смету в буфер</button>
     </div>
   `;
@@ -1391,19 +1468,24 @@ function closeBomModal() {
 }
 
 function copyBomText() {
-  let total = 0;
   const lines = ['Смета и план расстановки кладовой (4.65 м²):'];
   items.forEach((i, idx) => {
-    total += i.price || 0;
     lines.push(`${idx+1}. ${i.name} (${i.w}x${i.d}x${i.h} мм) — Стена: ${WALL_INFO[i.wall].label}, отступ ${Math.round(i.offset)} мм — ${i.price.toLocaleString('ru-RU')} ₽`);
+    if (i.brand === 'SE 750кг') {
+      const unit = seShelfUnitPrice(i.w, i.d);
+      lines.push(`   Стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${i.shelves}× SE-140 ${unit.toLocaleString('ru-RU')} ₽`);
+    }
     if (isShelfRack(i)) {
       ensureShelfLayout(i);
       lines.push(`   Полки (${i.shelves}): ${i.shelfZs.join(', ')} мм от низа`);
       for (const c of i.contents || []) lines.push(`   · ${c.name} на полке ${c.shelfIndex + 1}, ${c.w}×${c.d}×${c.h} мм`);
     }
   });
-  lines.push(`ИТОГО: ${total.toLocaleString('ru-RU')} ₽`);
-  lines.push('Цены справочные; крепёж, доставка и сборка не включены. Проверить фактические габариты, дверь и трассу трубы.');
+  const zone = deliveryZone();
+  lines.push(`Доставка СтелТех (${zone.label}): ${deliveryPrice().toLocaleString('ru-RU')} ₽ — ${STELTECH_DELIVERY.source}`);
+  lines.push(`Товары: ${itemsSubtotal().toLocaleString('ru-RU')} ₽`);
+  lines.push(`ИТОГО: ${projectTotal().toLocaleString('ru-RU')} ₽`);
+  lines.push('Цены справочные по СтелТех; подъём на этаж, перенос с борта и сборка — отдельно. Проверить габариты, дверь и трассу трубы.');
   navigator.clipboard.writeText(lines.join('\n')).then(()=>toast('Смета скопирована'),()=>download('kladovka-smeta.txt',lines.join('\n'),'text/plain'));
 }
 
@@ -1494,7 +1576,6 @@ function loadSnapshot(data){
   i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;
   i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;
   if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}
-  if(i.brand==='SE 750кг')normalizeBuyableRack(i);
   if(i.brand==='Лемана ПРО'){
     const match=catalogRacksForBrand(i.brand).find(m2=>m2.w===i.w&&m2.d===i.d)||catalogRacksForBrand(i.brand).find(m2=>m2.id===i.modelId);
     if(match)Object.assign(i,{modelId:match.id,name:match.name,w:match.w,d:match.d,h:match.h,price:match.price,color:match.color});
@@ -1519,6 +1600,8 @@ function loadSnapshot(data){
    }
    ensureShelfLayout(i);
   }
+  // После shelves: цена SE = стойки + N×SE-140.
+  if(i.brand==='SE 750кг')normalizeBuyableRack(i);
   return i;
  });
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');
@@ -1646,6 +1729,9 @@ function openObjectMenu(uid,x,y){
 window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 window.openRackSizeMenu=openRackSizeMenu;window.setRackDimension=setRackDimension;
 window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.SE_PRICES=SE_PRICES;window.SE_POSTS_PRICE=SE_POSTS_PRICE;
+window.SE_SHELF_PRICES=SE_SHELF_PRICES;window.STELTECH_DELIVERY=STELTECH_DELIVERY;
+window.seShelfUnitPrice=seShelfUnitPrice;window.seRackPrice=seRackPrice;window.setDeliveryZone=setDeliveryZone;
+window.deliveryPrice=deliveryPrice;window.projectTotal=projectTotal;window.itemsSubtotal=itemsSubtotal;
 window.seDepthsForWidth=seDepthsForWidth;window.isSeSize=isSeSize;window.makeSeModel=makeSeModel;
 window.normalizeBuyableRack=normalizeBuyableRack;window.nearestSeDepth=nearestSeDepth;window.catalogRacksForBrand=catalogRacksForBrand;
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
