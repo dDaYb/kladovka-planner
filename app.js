@@ -94,23 +94,77 @@ function makeSeModel(w, d, shelves = SE_DEFAULT_SHELVES) {
     color: SE_COLORS[depth] || '#2563eb'
   };
 }
-/** Приводит SE-стеллаж к размеру, который есть в продаже у СтелТех. */
+/** Приводит SE / Профи-Т к размеру, который есть в продаже у СтелТех. */
 function normalizeBuyableRack(item) {
-  if (!item || item.brand !== 'SE 750кг') return item;
-  const shelves = item.shelves || SE_DEFAULT_SHELVES;
-  const m = makeSeModel(item.w, item.d, shelves);
-  Object.assign(item, {
-    modelId: m.id,
-    name: m.name,
-    w: m.w,
-    d: m.d,
-    h: m.h,
-    price: m.price,
-    color: m.color,
-    shelves: m.shelves
-  });
+  if (!item) return item;
+  if (item.brand === 'SE 750кг') {
+    const shelves = item.shelves || SE_DEFAULT_SHELVES;
+    const m = makeSeModel(item.w, item.d, shelves);
+    Object.assign(item, {
+      modelId: m.id, name: m.name, w: m.w, d: m.d, h: m.h, price: m.price, color: m.color, shelves: m.shelves
+    });
+    return item;
+  }
+  if (item.brand === 'Профи-Т 2500кг') {
+    const shelves = item.shelves || PT_DEFAULT_SHELVES;
+    const m = makePtModel(item.w, item.d, shelves);
+    Object.assign(item, {
+      modelId: m.id, name: m.name, w: m.w, d: m.d, h: m.h, price: m.price, color: m.color, shelves: m.shelves
+    });
+  }
   return item;
 }
+
+// Профи-Т 2500кг (СтелТех): в планировщике только высота 3000 мм, настил — фанера.
+// Цена = стойки 6532 ₽ + N× ярус с фанерой (актуально на stel-teh.ru). Шаг перфорации 45 мм.
+const PT_HEIGHT = 3000;
+const PT_POSTS_PRICE = 6532;
+const PT_DEFAULT_SHELVES = 4;
+const PT_SHELF_STEP = 45;
+const PT_WIDTHS = [455, 500, 655, 770, 1005, 1240, 1540, 1845];
+const PT_DEPTHS = [455, 500, 655, 770, 1005];
+const PT_SHELF_PRICES = {
+  '455_455': 1399, '455_500': 1429, '455_655': 1551, '455_770': 1721, '455_1005': 2075,
+  '500_455': 1429, '500_500': 1459, '500_655': 1626, '500_770': 1806, '500_1005': 2177,
+  '655_455': 1551, '655_500': 1626, '655_655': 1908, '655_770': 2117, '655_1005': 2672,
+  '770_455': 1721, '770_500': 1806, '770_655': 2117, '770_770': 2347, '770_1005': 2821,
+  '1005_455': 2075, '1005_500': 2177, '1005_655': 2672, '1005_770': 2821, '1005_1005': 4003,
+  '1240_455': 2424, '1240_500': 2534, '1240_655': 2975, '1240_770': 2992, '1240_1005': 4386,
+  '1540_455': 2639, '1540_500': 2689, '1540_655': 3144, '1540_770': 3392, '1540_1005': 4634,
+  '1845_455': 2899, '1845_500': 2995, '1845_655': 3503, '1845_770': 3797, '1845_1005': 5136
+};
+const PT_COLORS = { 455: '#1d4ed8', 500: '#1e40af', 655: '#1e3a8a', 770: '#172554', 1005: '#0f172a' };
+function isPtSize(w, d) {
+  return PT_WIDTHS.includes(Number(w)) && PT_DEPTHS.includes(Number(d));
+}
+function nearestPtWidth(w) {
+  return PT_WIDTHS.reduce((best, x) => Math.abs(x - w) < Math.abs(best - w) ? x : best, PT_WIDTHS[0]);
+}
+function nearestPtDepth(d) {
+  return PT_DEPTHS.reduce((best, x) => Math.abs(x - d) < Math.abs(best - d) ? x : best, PT_DEPTHS[0]);
+}
+function ptShelfUnitPrice(w, d) {
+  return PT_SHELF_PRICES[`${Number(w)}_${Number(d)}`] || 0;
+}
+function ptRackPrice(w, d, shelves = PT_DEFAULT_SHELVES) {
+  const unit = ptShelfUnitPrice(w, d);
+  if (!unit) return 0;
+  return PT_POSTS_PRICE + Math.max(0, Math.round(Number(shelves) || 0)) * unit;
+}
+function makePtModel(w, d, shelves = PT_DEFAULT_SHELVES) {
+  const width = PT_WIDTHS.includes(w) ? w : nearestPtWidth(w);
+  const depth = PT_DEPTHS.includes(d) ? d : nearestPtDepth(d);
+  const n = Math.max(2, Math.min(8, Math.round(Number(shelves) || PT_DEFAULT_SHELVES)));
+  return {
+    id: `pt_${width}_${depth}`,
+    brand: 'Профи-Т 2500кг',
+    name: `Профи-Т ${PT_HEIGHT}×${width}×${depth} · фанера`,
+    w: width, d: depth, h: PT_HEIGHT, shelves: n,
+    price: ptRackPrice(width, depth, n),
+    color: PT_COLORS[depth] || '#1e40af'
+  };
+}
+
 // Быстрый каталог: сметные позиции + глубины 600/700/800 (700 — только где есть у СтелТех).
 const CATALOG = {
   se: [
@@ -122,6 +176,12 @@ const CATALOG = {
     makeSeModel(1200, 600), makeSeModel(900, 600), makeSeModel(1000, 600), makeSeModel(700, 600),
     makeSeModel(1200, 700), makeSeModel(900, 700), makeSeModel(1000, 700),
     makeSeModel(1200, 800), makeSeModel(900, 800), makeSeModel(1000, 800), makeSeModel(700, 800)
+  ],
+  pt: [
+    makePtModel(1005, 500), makePtModel(1005, 655), makePtModel(770, 500),
+    makePtModel(1240, 500), makePtModel(655, 500), makePtModel(500, 500),
+    makePtModel(1540, 500), makePtModel(1005, 770), makePtModel(1240, 770),
+    makePtModel(455, 500), makePtModel(1845, 500)
   ],
   lm: [
     { id: 'lm_1000_500', brand: 'Лемана ПРО', name: 'Практик/Stynergy 2000×1000×500 (арт. 82285507)', w: 1000, d: 500, h: 2000, shelves: 5, price: 5510, color: '#16a34a' },
@@ -165,6 +225,11 @@ const SHELF_STEP = 25;      // шаг перфорации SE
 const SHELF_PLATE = 25;     // толщина полки в модели
 const SHELF_MIN = 2;
 const SHELF_MAX = 8;
+function shelfStepForBrand(brand) {
+  if (brand === 'SE 750кг') return SHELF_STEP;
+  if (brand === 'Профи-Т 2500кг') return PT_SHELF_STEP;
+  return 50;
+}
 // Геометрия стен:
 // left: x=0, y in [0..2860]
 // top: y=0, x in [0..1468]
@@ -280,25 +345,29 @@ function cargoThumbSvg(m) {
 
 function snapShelfZ(z, brand) {
   const n = Math.round(Number(z) || 0);
-  if (brand === 'SE 750кг') return Math.max(SHELF_PLATE, Math.round(n / SHELF_STEP) * SHELF_STEP);
+  const step = shelfStepForBrand(brand);
+  if (brand === 'SE 750кг' || brand === 'Профи-Т 2500кг') {
+    return Math.max(SHELF_PLATE, Math.round(n / step) * step);
+  }
   return Math.max(SHELF_PLATE, n);
 }
 
 function defaultShelfZs(h, n, brand) {
   const count = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Number(n) || 5));
   const height = Math.max(400, Number(h) || 1800);
+  const step = shelfStepForBrand(brand);
   let first = snapShelfZ(Math.min(150, Math.round(height * 0.08)), brand);
   let last = snapShelfZ(height - Math.min(250, Math.round(height * 0.08)), brand);
-  if (last <= first + SHELF_STEP) last = snapShelfZ(height - 50, brand);
+  if (last <= first + step) last = snapShelfZ(height - 50, brand);
   const zs = [];
   for (let i = 0; i < count; i++) {
     const raw = count === 1 ? first : first + i * (last - first) / (count - 1);
     zs.push(snapShelfZ(raw, brand));
   }
   for (let i = 1; i < zs.length; i++) {
-    if (zs[i] <= zs[i - 1]) zs[i] = zs[i - 1] + (brand === 'SE 750кг' ? SHELF_STEP : 50);
+    if (zs[i] <= zs[i - 1]) zs[i] = zs[i - 1] + step;
   }
-  while (zs.length && zs[zs.length - 1] >= height) zs[zs.length - 1] -= brand === 'SE 750кг' ? SHELF_STEP : 50;
+  while (zs.length && zs[zs.length - 1] >= height) zs[zs.length - 1] -= step;
   return zs;
 }
 
@@ -306,12 +375,13 @@ function ensureShelfLayout(item) {
   if (!isShelfRack(item)) return item;
   const n = Math.max(SHELF_MIN, Math.min(SHELF_MAX, Number(item.shelves) || 5));
   item.shelves = n;
+  const step = shelfStepForBrand(item.brand);
   if (!Array.isArray(item.shelfZs) || item.shelfZs.length !== n) {
     item.shelfZs = defaultShelfZs(item.h, n, item.brand);
   } else {
     item.shelfZs = item.shelfZs.map(z => snapShelfZ(z, item.brand));
     for (let i = 1; i < item.shelfZs.length; i++) {
-      if (item.shelfZs[i] <= item.shelfZs[i - 1]) item.shelfZs[i] = item.shelfZs[i - 1] + (item.brand === 'SE 750кг' ? SHELF_STEP : 50);
+      if (item.shelfZs[i] <= item.shelfZs[i - 1]) item.shelfZs[i] = item.shelfZs[i - 1] + step;
     }
     item.shelfZs = item.shelfZs.map(z => Math.min(item.h - SHELF_PLATE, Math.max(SHELF_PLATE, z)));
   }
@@ -363,6 +433,8 @@ function findCatalogModel(modelId) {
   const se = /^se_(\d+)_(\d+)$/.exec(modelId || '');
   // Несуществующие пары (например 700×700) приводим к ближайшему покупаемому размеру.
   if (se) return makeSeModel(Number(se[1]), Number(se[2]));
+  const pt = /^pt_(\d+)_(\d+)$/.exec(modelId || '');
+  if (pt) return makePtModel(Number(pt[1]), Number(pt[2]));
   return null;
 }
 
@@ -377,6 +449,10 @@ function rackSizeOptions(item, key) {
   if (item.brand === 'SE 750кг') {
     if (key === 'w') return SE_WIDTHS.slice();
     return seDepthsForWidth(item.w);
+  }
+  if (item.brand === 'Профи-Т 2500кг') {
+    if (key === 'w') return PT_WIDTHS.slice();
+    return PT_DEPTHS.slice();
   }
   // Для каталожных брендов — только размеры, которые реально есть в паре с другой стороной.
   const sizes = new Set();
@@ -395,7 +471,7 @@ function setRackDimension(uid, key, value) {
   if (!Number.isFinite(n) || !rackSizeOptions(item, key).includes(n)) return;
   closeObjectMenu();
   item[key] = n;
-  if (item.brand === 'SE 750кг') {
+  if (item.brand === 'SE 750кг' || item.brand === 'Профи-Т 2500кг') {
     normalizeBuyableRack(item);
   } else {
     let match = catalogRacksForBrand(item.brand).find(m => m.w === item.w && m.d === item.d);
@@ -432,6 +508,23 @@ function renderBuyableSizeControls(item) {
         </select>
       </label>
       <label class="inspector-row">Высота, мм<input aria-label="h" type="number" value="${SE_HEIGHT}" disabled title="У SE в планировщике только ${SE_HEIGHT} мм"></label>
+      ${['gap','z'].map((k,j)=>`<label class="inspector-row">${['Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="0" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+    `;
+  }
+  if (item.brand === 'Профи-Т 2500кг') {
+    return `
+      <div class="note">Профи-Т 2500кг · СтелТех: высота только ${PT_HEIGHT} мм, настил фанера.</div>
+      <label class="inspector-row">Ширина, мм
+        <select aria-label="w" onchange="setRackDimension(${item.uid},'w',this.value)">
+          ${PT_WIDTHS.map(w => `<option value="${w}" ${w === item.w ? 'selected' : ''}>${w}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Глубина, мм
+        <select aria-label="d" onchange="setRackDimension(${item.uid},'d',this.value)">
+          ${PT_DEPTHS.map(d => `<option value="${d}" ${d === item.d ? 'selected' : ''}>${d}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Высота, мм<input aria-label="h" type="number" value="${PT_HEIGHT}" disabled title="В планировщике только ${PT_HEIGHT} мм"></label>
       ${['gap','z'].map((k,j)=>`<label class="inspector-row">${['Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="0" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
     `;
   }
@@ -686,7 +779,7 @@ function renderInspector() {
   }
 
   badge.textContent = item.brand;
-  badge.className = 'badge ' + (item.isBike ? 'badge-bike' : (item.brand === 'SE 750кг' ? 'badge-se' : 'badge-lm'));
+  badge.className = 'badge ' + (item.isBike ? 'badge-bike' : (item.brand === 'SE 750кг' ? 'badge-se' : (item.brand === 'Профи-Т 2500кг' ? 'badge-pt' : 'badge-lm')));
 
   const wallMax = WALL_INFO[item.wall].maxLen;
   const maxOff = Math.max(0, wallMax - placedSize(item).w);
@@ -801,12 +894,13 @@ function renderShelfInspector(item) {
         <button type="button" class="btn" onclick="redistributeShelves(${item.uid})">Выровнять высоты</button>
       </div>
       ${item.brand==='SE 750кг'?`<div class="note">Цена: стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${item.shelves}× SE-140 ${seShelfUnitPrice(item.w,item.d).toLocaleString('ru-RU')} ₽ = <b>${(item.price||0).toLocaleString('ru-RU')} ₽</b></div>`:''}
+      ${item.brand==='Профи-Т 2500кг'?`<div class="note">Цена: стойки ${PT_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${item.shelves}× ярус (фанера) ${ptShelfUnitPrice(item.w,item.d).toLocaleString('ru-RU')} ₽ = <b>${(item.price||0).toLocaleString('ru-RU')} ₽</b></div>`:''}
       <div class="shelf-chip-row" role="tablist" aria-label="Полки стеллажа">${shelfChips}</div>
       <div class="shelf-active">
         <label class="inspector-row">Высота полки ${active + 1}, мм от низа
-          <input type="number" aria-label="shelf-z-${active}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${item.brand==='SE 750кг'?SHELF_STEP:1}" value="${item.shelfZs[active]}" onchange="setShelfZ(${item.uid}, ${active}, this.value)">
+          <input type="number" aria-label="shelf-z-${active}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${shelfStepForBrand(item.brand)}" value="${item.shelfZs[active]}" onchange="setShelfZ(${item.uid}, ${active}, this.value)">
         </label>
-        <div class="note">Просвет: <b>${clear} мм</b> · ширина занята <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':''}</div>
+        <div class="note">Просвет: <b>${clear} мм</b> · ширина занята <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':(item.brand==='Профи-Т 2500кг'?' · шаг 45 мм':'')}</div>
         <div class="shelf-fill${fillOver?' over':''}" role="meter" aria-valuemin="0" aria-valuemax="${item.w}" aria-valuenow="${used}" aria-label="Занятость полки по ширине"><span style="width:${fillPct}%"></span></div>
       </div>
       <div class="cargo-list" data-rack-uid="${item.uid}">
@@ -824,6 +918,8 @@ function setShelfCount(uid, value) {
   item.shelfZs = defaultShelfZs(item.h, n, item.brand);
   if (item.brand === 'SE 750кг') {
     item.price = seRackPrice(item.w, item.d, n);
+  } else if (item.brand === 'Профи-Т 2500кг') {
+    item.price = ptRackPrice(item.w, item.d, n);
   }
   ensureShelfLayout(item);
   refreshAll();
@@ -1403,9 +1499,12 @@ function openBomModal() {
 
   const rows = Object.values(grouped).map(g => {
     const seUnit = g.brand === 'SE 750кг' ? seShelfUnitPrice(g.w, g.d) : 0;
+    const ptUnit = g.brand === 'Профи-Т 2500кг' ? ptShelfUnitPrice(g.w, g.d) : 0;
     const detail = g.brand === 'SE 750кг' && seUnit
       ? `<br><span style="color:#64748b;font-size:11px;">стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${g.shelves}× полка SE-140 ${seUnit.toLocaleString('ru-RU')} ₽</span>`
-      : `<br><span style="color:#64748b;font-size:11px;">${g.brand} • ${g.w}×${g.d}×${g.h} мм</span>`;
+      : (g.brand === 'Профи-Т 2500кг' && ptUnit
+        ? `<br><span style="color:#64748b;font-size:11px;">стойки ${PT_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${g.shelves}× ярус (фанера) ${ptUnit.toLocaleString('ru-RU')} ₽</span>`
+        : `<br><span style="color:#64748b;font-size:11px;">${g.brand} • ${g.w}×${g.d}×${g.h} мм</span>`);
     return `
     <tr>
       <td><b>${g.name}</b>${detail}</td>
@@ -1474,6 +1573,10 @@ function copyBomText() {
     if (i.brand === 'SE 750кг') {
       const unit = seShelfUnitPrice(i.w, i.d);
       lines.push(`   Стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${i.shelves}× SE-140 ${unit.toLocaleString('ru-RU')} ₽`);
+    }
+    if (i.brand === 'Профи-Т 2500кг') {
+      const unit = ptShelfUnitPrice(i.w, i.d);
+      lines.push(`   Стойки ${PT_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${i.shelves}× ярус (фанера) ${unit.toLocaleString('ru-RU')} ₽`);
     }
     if (isShelfRack(i)) {
       ensureShelfLayout(i);
@@ -1548,12 +1651,15 @@ function editDimension(uid,key,value){
   const item=items.find(i=>i.uid===uid),n=Number(value);
   if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;
   // SE / Лемана: габариты только из покупаемой сетки, не произвольный ввод.
-  if((item.brand==='SE 750кг'||item.brand==='Лемана ПРО')&&(key==='w'||key==='d')){
+  if((item.brand==='SE 750кг'||item.brand==='Профи-Т 2500кг'||item.brand==='Лемана ПРО')&&(key==='w'||key==='d')){
     setRackDimension(uid,key,Math.round(n));
     return;
   }
   if(item.brand==='SE 750кг'&&key==='h'){
     item.h=SE_HEIGHT;ensureShelfLayout(item);refreshAll();return;
+  }
+  if(item.brand==='Профи-Т 2500кг'&&key==='h'){
+    item.h=PT_HEIGHT;ensureShelfLayout(item);refreshAll();return;
   }
   if(item.brand==='Лемана ПРО'&&key==='h'){
     const match=catalogRacksForBrand(item.brand).find(m=>m.w===item.w&&m.d===item.d);
@@ -1600,8 +1706,8 @@ function loadSnapshot(data){
    }
    ensureShelfLayout(i);
   }
-  // После shelves: цена SE = стойки + N×SE-140.
-  if(i.brand==='SE 750кг')normalizeBuyableRack(i);
+  // После shelves: цена SE/Профи-Т = стойки + N×ярус.
+  if(i.brand==='SE 750кг'||i.brand==='Профи-Т 2500кг')normalizeBuyableRack(i);
   return i;
  });
  const h=Number(data.ceilingHeight);if(!Number.isFinite(h)||h<1800||h>3400)throw Error('Некорректная высота потолка.');
@@ -1695,13 +1801,19 @@ function openRackSizeMenu(uid,key,x,y){
   note.style.cssText='padding:4px 6px;margin:2px 0';
   note.textContent=item.brand==='SE 750кг'
     ?`${title}: только размеры СтелТех${key==='d'?` для ширины ${item.w}`:''}`
-    :`${title} сейчас: ${item[key]} мм`;
+    :(item.brand==='Профи-Т 2500кг'
+      ?`${title}: Профи-Т 2500кг, H=${PT_HEIGHT}`
+      :`${title} сейчас: ${item[key]} мм`);
   menu.append(note);
   for(const size of rackSizeOptions(item,key)){
     const current=size===item[key];
-    const priceHint=item.brand==='SE 750кг'&&key==='d'&&SE_PRICES[`${item.w}_${size}`]
-      ?` · ${SE_PRICES[`${item.w}_${size}`].toLocaleString('ru-RU')} ₽`
-      :(item.brand==='SE 750кг'&&key==='w'?'':'');
+    let priceHint='';
+    if(item.brand==='SE 750кг'&&key==='d'&&SE_PRICES[`${item.w}_${size}`]){
+      priceHint=` · ${SE_PRICES[`${item.w}_${size}`].toLocaleString('ru-RU')} ₽`;
+    } else if(item.brand==='Профи-Т 2500кг'&&key==='d'){
+      const p=ptRackPrice(item.w,size,item.shelves||PT_DEFAULT_SHELVES);
+      if(p) priceHint=` · ${p.toLocaleString('ru-RU')} ₽`;
+    }
     menu.append(menuButton(`${current?'✓ ':'  '}${size} мм${priceHint}`,()=>setRackDimension(uid,key,size)));
   }
   placeObjectMenu(menu,x,y);
@@ -1733,6 +1845,8 @@ window.SE_SHELF_PRICES=SE_SHELF_PRICES;window.STELTECH_DELIVERY=STELTECH_DELIVER
 window.seShelfUnitPrice=seShelfUnitPrice;window.seRackPrice=seRackPrice;window.setDeliveryZone=setDeliveryZone;
 window.deliveryPrice=deliveryPrice;window.projectTotal=projectTotal;window.itemsSubtotal=itemsSubtotal;
 window.seDepthsForWidth=seDepthsForWidth;window.isSeSize=isSeSize;window.makeSeModel=makeSeModel;
+window.PT_WIDTHS=PT_WIDTHS;window.PT_DEPTHS=PT_DEPTHS;window.PT_SHELF_PRICES=PT_SHELF_PRICES;window.PT_POSTS_PRICE=PT_POSTS_PRICE;
+window.ptShelfUnitPrice=ptShelfUnitPrice;window.ptRackPrice=ptRackPrice;window.makePtModel=makePtModel;window.isPtSize=isPtSize;
 window.normalizeBuyableRack=normalizeBuyableRack;window.nearestSeDepth=nearestSeDepth;window.catalogRacksForBrand=catalogRacksForBrand;
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
