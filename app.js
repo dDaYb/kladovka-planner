@@ -26,20 +26,45 @@ const SE_PRICES = {
 };
 const SE_COLORS = { 300: '#0369a1', 400: '#0284c7', 500: '#2563eb', 600: '#1d4ed8', 700: '#1e40af', 800: '#172554' };
 function seDepthsForWidth(w) {
-  return (SE_DEPTHS_BY_WIDTH[w] || SE_DEPTHS).slice();
+  return (SE_DEPTHS_BY_WIDTH[w] || SE_DEPTHS_BY_WIDTH[700]).slice();
 }
 function isSeSize(w, d) {
-  return SE_WIDTHS.includes(w) && seDepthsForWidth(w).includes(d);
+  return SE_WIDTHS.includes(Number(w)) && seDepthsForWidth(Number(w)).includes(Number(d));
+}
+function nearestSeWidth(w) {
+  return SE_WIDTHS.reduce((best, x) => Math.abs(x - w) < Math.abs(best - w) ? x : best, SE_WIDTHS[0]);
+}
+function nearestSeDepth(w, d) {
+  const depths = seDepthsForWidth(w);
+  return depths.reduce((best, x) => Math.abs(x - d) < Math.abs(best - d) ? x : best, depths[0]);
 }
 function makeSeModel(w, d) {
+  const width = SE_WIDTHS.includes(w) ? w : nearestSeWidth(w);
+  const depth = isSeSize(width, d) ? d : nearestSeDepth(width, d);
   return {
-    id: `se_${w}_${d}`,
+    id: `se_${width}_${depth}`,
     brand: 'SE 750кг',
-    name: `Стеллаж SE ${SE_HEIGHT}×${w}×${d}`,
-    w, d, h: SE_HEIGHT, shelves: 5,
-    price: SE_PRICES[`${w}_${d}`] || 0,
-    color: SE_COLORS[d] || '#2563eb'
+    name: `Стеллаж SE ${SE_HEIGHT}×${width}×${depth}`,
+    w: width, d: depth, h: SE_HEIGHT, shelves: 5,
+    price: SE_PRICES[`${width}_${depth}`] || 0,
+    color: SE_COLORS[depth] || '#2563eb'
   };
+}
+/** Приводит SE-стеллаж к размеру, который есть в продаже у СтелТех. */
+function normalizeBuyableRack(item) {
+  if (!item || item.brand !== 'SE 750кг') return item;
+  const m = makeSeModel(item.w, item.d);
+  Object.assign(item, {
+    modelId: m.id,
+    name: m.name,
+    w: m.w,
+    d: m.d,
+    h: m.h,
+    price: m.price,
+    color: m.color,
+    shelves: item.shelves || m.shelves
+  });
+  return item;
 }
 // Быстрый каталог: сметные позиции + глубины 600/700/800 (700 — только где есть у СтелТех).
 const CATALOG = {
@@ -291,10 +316,8 @@ function findCatalogModel(modelId) {
     if (found) return found;
   }
   const se = /^se_(\d+)_(\d+)$/.exec(modelId || '');
-  if (se) {
-    const w = Number(se[1]), d = Number(se[2]);
-    if (isSeSize(w, d)) return makeSeModel(w, d);
-  }
+  // Несуществующие пары (например 700×700) приводим к ближайшему покупаемому размеру.
+  if (se) return makeSeModel(Number(se[1]), Number(se[2]));
   return null;
 }
 
@@ -302,18 +325,21 @@ function isShelfRack(item) {
   return !!(item && !item.isBike && !item.isSki && !item.isLadder);
 }
 
+function catalogRacksForBrand(brand) {
+  return Object.values(CATALOG).flat().filter(m => m.brand === brand && !m.isBike && !m.isSki && !m.isLadder && !m.isCargo);
+}
 function rackSizeOptions(item, key) {
   if (item.brand === 'SE 750кг') {
     if (key === 'w') return SE_WIDTHS.slice();
     return seDepthsForWidth(item.w);
   }
+  // Для каталожных брендов — только размеры, которые реально есть в паре с другой стороной.
   const sizes = new Set();
-  for (const list of Object.values(CATALOG)) {
-    for (const m of list) {
-      if (m.brand === item.brand && !m.isBike && !m.isSki && !m.isLadder) sizes.add(m[key]);
-    }
+  for (const m of catalogRacksForBrand(item.brand)) {
+    if (key === 'w') sizes.add(m.w);
+    else if (m.w === item.w) sizes.add(m.d);
   }
-  sizes.add(item[key]);
+  if (!sizes.size) sizes.add(item[key]);
   return [...sizes].sort((a, b) => a - b);
 }
 
@@ -325,16 +351,15 @@ function setRackDimension(uid, key, value) {
   closeObjectMenu();
   item[key] = n;
   if (item.brand === 'SE 750кг') {
-    // При смене ширины глубина 700 может стать недоступной — берём ближайшую допустимую.
-    if (!isSeSize(item.w, item.d)) {
-      const depths = seDepthsForWidth(item.w);
-      item.d = depths.reduce((best, d) => Math.abs(d - item.d) < Math.abs(best - item.d) ? d : best, depths[0]);
-    }
-    const m = makeSeModel(item.w, item.d);
-    Object.assign(item, { modelId: m.id, name: m.name, h: m.h, price: m.price, color: m.color });
+    normalizeBuyableRack(item);
   } else {
-    const match = Object.values(CATALOG).flat().find(m => m.brand === item.brand && m.w === item.w && m.d === item.d && !m.isBike && !m.isSki && !m.isLadder && !m.isCargo);
-    if (match) Object.assign(item, { modelId: match.id, name: match.name, h: match.h, price: match.price, color: match.color });
+    let match = catalogRacksForBrand(item.brand).find(m => m.w === item.w && m.d === item.d);
+    if (!match) {
+      const candidates = catalogRacksForBrand(item.brand).filter(m => key === 'w' ? m.w === item.w : m.d === item.d);
+      match = candidates[0] || catalogRacksForBrand(item.brand)[0];
+      if (match) { item.w = match.w; item.d = match.d; }
+    }
+    if (match) Object.assign(item, { modelId: match.id, name: match.name, h: match.h, price: match.price, color: match.color, w: match.w, d: match.d });
   }
   ensureShelfLayout(item);
   if (!item.free) {
@@ -343,6 +368,51 @@ function setRackDimension(uid, key, value) {
   }
   selectedId = uid;
   refreshAll();
+}
+
+function renderBuyableSizeControls(item) {
+  if (item.brand === 'SE 750кг') {
+    const widths = SE_WIDTHS;
+    const depths = seDepthsForWidth(item.w);
+    return `
+      <div class="note">Только размеры из каталога СтелТех SE 750кг (высота ${SE_HEIGHT} мм).</div>
+      <label class="inspector-row">Ширина, мм
+        <select aria-label="w" onchange="setRackDimension(${item.uid},'w',this.value)">
+          ${widths.map(w => `<option value="${w}" ${w === item.w ? 'selected' : ''}>${w}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Глубина, мм
+        <select aria-label="d" onchange="setRackDimension(${item.uid},'d',this.value)">
+          ${depths.map(d => `<option value="${d}" ${d === item.d ? 'selected' : ''}>${d}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Высота, мм<input aria-label="h" type="number" value="${SE_HEIGHT}" disabled title="У SE в планировщике только ${SE_HEIGHT} мм"></label>
+      ${['gap','z'].map((k,j)=>`<label class="inspector-row">${['Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="0" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+    `;
+  }
+  if (item.brand === 'Лемана ПРО') {
+    const widths = rackSizeOptions(item, 'w');
+    const depths = rackSizeOptions(item, 'd');
+    return `
+      <div class="note">Только размеры из каталога «Лемана ПРО».</div>
+      <label class="inspector-row">Ширина, мм
+        <select aria-label="w" onchange="setRackDimension(${item.uid},'w',this.value)">
+          ${widths.map(w => `<option value="${w}" ${w === item.w ? 'selected' : ''}>${w}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Глубина, мм
+        <select aria-label="d" onchange="setRackDimension(${item.uid},'d',this.value)">
+          ${depths.map(d => `<option value="${d}" ${d === item.d ? 'selected' : ''}>${d}</option>`).join('')}
+        </select>
+      </label>
+      <label class="inspector-row">Высота, мм<input aria-label="h" type="number" value="${item.h}" disabled></label>
+      ${['gap','z'].map((k,j)=>`<label class="inspector-row">${['Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="0" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+    `;
+  }
+  return `
+    <div class="note">Размеры вдоль стены × глубина × высота, мм</div>
+    ${['w','d','h','gap','z'].map((k,j)=>`<label class="inspector-row">${['Ширина вдоль стены','Глубина','Высота','Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="${k==='gap'||k==='z'?0:1}" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+  `;
 }
 
 // Вычисление мировых 2D координат прямоугольника объекта (x, y, width, height)
@@ -602,8 +672,7 @@ function renderInspector() {
     <label><input type="checkbox" ${item.clearanceVisible!==false?'checked':''} onchange="editBikeClearance(${item.uid},'clearanceVisible',this.checked)"> Показать в 2D и 3D</label>
     ${[['bikeLength','Длина велосипеда',1700],['handlingSpace','Запас для человека',600],['liftSpace','Подъём с крюка',150]].map(([k,label,v])=>`<label class="inspector-row">${label}, мм<input aria-label="${k}" type="number" min="0" max="5000" value="${item[k]??v}" onchange="editBikeClearance(${item.uid},'${k}',this.value)"></label>`).join('')}
     <div class="note">Обмер велосипеда: 1700×500×1000 мм (Д×Ш×В). При подвесе: 500×1000×1700 мм без крепления. Ширина с повёрнутым рулём пока оценочная.</div><div class="note">Оценочный объём для опускания и манёвра. Не проверяет весь путь через дверь. Размеры уточните по велосипеду и креплению.</div></fieldset>`:''}
-    <div class="note">Размеры вдоль стены × глубина × высота, мм</div>
-    ${['w','d','h','gap','z'].map((k,j)=>`<label class="inspector-row">${['Ширина вдоль стены','Глубина','Высота','Отступ от стены','Низ над полом'][j]}<input type="number" aria-label="${k}" min="${k==='gap'||k==='z'?0:1}" max="5000" value="${item[k]||0}" onchange="editDimension(${item.uid},'${k}',this.value)"></label>`).join('')}
+    ${renderBuyableSizeControls(item)}
     ${isShelfRack(item)?renderShelfInspector(item):''}
 
     <div style="margin-bottom:8px;">
@@ -1393,7 +1462,25 @@ function updateAnalysis(){
  for(const i of items.filter(isShelfRack)){for(const issue of shelfIssues(i)){const el=document.createElement('div');el.className='warn';el.textContent=`Стеллаж №${i.uid}: ${issue}`;node.append(el);}}
  for(const i of items.filter(i=>i.isBike&&i.clearanceVisible!==false)){const issues=bikeClearanceIssues(i),el=document.createElement('div');el.className=issues.length?'warn':'ok';el.textContent=`Зона снятия №${i.uid}: ${issues.length?issues.join('; '):'свободна в пределах оценочного объёма'}.`;node.append(el);}
 }
-function editDimension(uid,key,value){const item=items.find(i=>i.uid===uid),n=Number(value);if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));if(isShelfRack(item)&&key==='h')ensureShelfLayout(item);refreshAll();}
+function editDimension(uid,key,value){
+  const item=items.find(i=>i.uid===uid),n=Number(value);
+  if(!item||!['w','d','h','gap','z'].includes(key)||!Number.isFinite(n))return;
+  // SE / Лемана: габариты только из покупаемой сетки, не произвольный ввод.
+  if((item.brand==='SE 750кг'||item.brand==='Лемана ПРО')&&(key==='w'||key==='d')){
+    setRackDimension(uid,key,Math.round(n));
+    return;
+  }
+  if(item.brand==='SE 750кг'&&key==='h'){
+    item.h=SE_HEIGHT;ensureShelfLayout(item);refreshAll();return;
+  }
+  if(item.brand==='Лемана ПРО'&&key==='h'){
+    const match=catalogRacksForBrand(item.brand).find(m=>m.w===item.w&&m.d===item.d);
+    item.h=match?match.h:item.h;ensureShelfLayout(item);refreshAll();return;
+  }
+  item[key]=Math.max(key==='gap'||key==='z'?0:1,Math.min(5000,Math.round(n)));
+  if(isShelfRack(item)&&key==='h')ensureShelfLayout(item);
+  refreshAll();
+}
 function snapshot(){return {version:1,bikeMeasurements:2,shelfLayout:1,cargoIds:1,ceilingHeight,items:items.map(i=>({modelId:i.modelId,wall:i.wall,offset:i.offset,w:i.w,d:i.d,h:i.h,z:i.z||0,gap:i.gap||0,bikeMode:i.bikeMode??null,rotation:i.rotation||0,free:!!i.free,x:i.x||0,y:i.y||0,clearanceVisible:i.clearanceVisible!==false,bikeLength:i.bikeLength??1700,handlingSpace:i.handlingSpace??600,liftSpace:i.liftSpace??150,shelves:i.shelves||0,shelfZs:Array.isArray(i.shelfZs)?i.shelfZs.map(Number):undefined,contents:Array.isArray(i.contents)?i.contents.map(c=>({id:c.id,cid:c.cid,modelId:c.modelId,kind:c.kind,name:c.name,w:c.w,d:c.d,h:c.h,color:c.color,shelfIndex:c.shelfIndex,order:c.order||0,inventory:Array.isArray(c.inventory)?c.inventory:[],photo:c.photo??null})):[]}))};}
 function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(snapshot()));}catch{}}
 function loadSnapshot(data){
@@ -1407,6 +1494,11 @@ function loadSnapshot(data){
   i.clearanceVisible=r.clearanceVisible!==false;i.rotation=[0,90,180,270].includes(r.rotation)?r.rotation:0;
   i.bikeMode=m.isBike&&['floor','floor_turn','vert'].includes(r.bikeMode)?r.bikeMode:m.bikeMode;
   if(m.isBike&&data.bikeMeasurements!==2){const old=i.bikeMode==='vert'?[800,1000,2000]:i.bikeMode==='floor_turn'?[1750,420,1050]:[1750,620,1050];if(i.w===old[0]&&i.d===old[1]&&i.h===old[2]){i.w=i.bikeMode==='vert'?500:1700;i.d=i.bikeMode==='vert'?1000:i.bikeMode==='floor_turn'?420:500;i.h=i.bikeMode==='vert'?1700:1000;}if(i.bikeLength===1750)i.bikeLength=1700;}
+  if(i.brand==='SE 750кг')normalizeBuyableRack(i);
+  if(i.brand==='Лемана ПРО'){
+    const match=catalogRacksForBrand(i.brand).find(m2=>m2.w===i.w&&m2.d===i.d)||catalogRacksForBrand(i.brand).find(m2=>m2.id===i.modelId);
+    if(match)Object.assign(i,{modelId:match.id,name:match.name,w:match.w,d:match.d,h:match.h,price:match.price,color:match.color});
+  }
   if(isShelfRack(i)){
    const shelfN=Number(r.shelves??m.shelves??5);
    if(!Number.isFinite(shelfN)||shelfN<SHELF_MIN||shelfN>SHELF_MAX)throw Error('Некорректное число полок.');
@@ -1518,11 +1610,16 @@ function openRackSizeMenu(uid,key,x,y){
   const note=document.createElement('div');
   note.className='note';
   note.style.cssText='padding:4px 6px;margin:2px 0';
-  note.textContent=`${title} сейчас: ${item[key]} мм`;
+  note.textContent=item.brand==='SE 750кг'
+    ?`${title}: только размеры СтелТех${key==='d'?` для ширины ${item.w}`:''}`
+    :`${title} сейчас: ${item[key]} мм`;
   menu.append(note);
   for(const size of rackSizeOptions(item,key)){
     const current=size===item[key];
-    menu.append(menuButton(`${current?'✓ ':'  '}${size} мм`,()=>setRackDimension(uid,key,size)));
+    const priceHint=item.brand==='SE 750кг'&&key==='d'&&SE_PRICES[`${item.w}_${size}`]
+      ?` · ${SE_PRICES[`${item.w}_${size}`].toLocaleString('ru-RU')} ₽`
+      :(item.brand==='SE 750кг'&&key==='w'?'':'');
+    menu.append(menuButton(`${current?'✓ ':'  '}${size} мм${priceHint}`,()=>setRackDimension(uid,key,size)));
   }
   placeObjectMenu(menu,x,y);
 }
@@ -1550,6 +1647,7 @@ window.openObjectMenu=openObjectMenu;window.closeObjectMenu=closeObjectMenu;
 window.openRackSizeMenu=openRackSizeMenu;window.setRackDimension=setRackDimension;
 window.SE_WIDTHS=SE_WIDTHS;window.SE_DEPTHS=SE_DEPTHS;window.SE_PRICES=SE_PRICES;window.SE_POSTS_PRICE=SE_POSTS_PRICE;
 window.seDepthsForWidth=seDepthsForWidth;window.isSeSize=isSeSize;window.makeSeModel=makeSeModel;
+window.normalizeBuyableRack=normalizeBuyableRack;window.nearestSeDepth=nearestSeDepth;window.catalogRacksForBrand=catalogRacksForBrand;
 window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistributeShelves=redistributeShelves;
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
