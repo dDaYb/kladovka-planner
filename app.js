@@ -216,6 +216,11 @@ CATALOG.cargo = [
   {id:'fix_35l', brand:'На полку', isCargo:true, name:'Fix Price корзина 35 л · 530×360×250', w:530, d:360, h:250, price:0, color:'#c084fc'},
   // R18: типовой легковой 225/45R18 ≈ Ø660 × ширина 225; стоит на протекторе.
   {id:'tire_r18', brand:'На полку', isCargo:true, name:'Шина R18 · Ø≈660 × 225', w:660, d:225, h:660, price:0, color:'#1f2937'},
+  // Makita Makpac: база 395×295 мм, высота по типу (официальные габариты).
+  {id:'makpac_1', brand:'На полку', isCargo:true, name:'Makita Makpac тип 1 · 395×295×105', w:395, d:295, h:105, price:0, color:'#0ea5e9'},
+  {id:'makpac_2', brand:'На полку', isCargo:true, name:'Makita Makpac тип 2 · 395×295×157', w:395, d:295, h:157, price:0, color:'#0284c7'},
+  {id:'makpac_3', brand:'На полку', isCargo:true, name:'Makita Makpac тип 3 · 395×295×210', w:395, d:295, h:210, price:0, color:'#0369a1'},
+  {id:'makpac_4', brand:'На полку', isCargo:true, name:'Makita Makpac тип 4 · 395×295×315', w:395, d:295, h:315, price:0, color:'#0c4a6e'},
   {id:'suitcase', brand:'На полку', isCargo:true, name:'Чемодан 750×450×280', w:750, d:450, h:280, price:0, color:'#1d4ed8'},
   {id:'canister', brand:'На полку', isCargo:true, name:'Канистра 350×200×400', w:350, d:200, h:400, price:0, color:'#b45309'},
   {id:'custom_cargo', brand:'На полку', isCargo:true, name:'Свой предмет 400×300×300', w:400, d:300, h:300, price:0, color:'#64748b'}
@@ -848,10 +853,12 @@ function renderShelfInspector(item) {
   const fillOver = used > item.w;
   const shelfChips = item.shelfZs.map((z, i) => {
     const n = shelfCargo(item, i).length;
-    const bad = shelfCargo(item, i).some(c => c.h > shelfClearance(item, i)) || shelfWidthUsed(item, i) > item.w;
+    const gapMm = shelfClearance(item, i);
+    const gapCm = Math.round(gapMm / 10);
+    const bad = shelfCargo(item, i).some(c => c.h > gapMm) || shelfWidthUsed(item, i) > item.w;
     return `<button type="button" class="shelf-chip${i===active?' active':''}${bad?' warn':''}" data-shelf-drop="${i}" onclick="selectShelfIndex(${i})" role="tab" aria-selected="${i===active}">
       <span class="shelf-chip-title">Полка ${i + 1}</span>
-      <span class="shelf-chip-meta">${z} мм · ${n || 'пусто'}${bad?' · !':''}</span>
+      <span class="shelf-chip-meta">${z} мм · ${gapCm} см${n?` · ${n}`:' · пусто'}${bad?' · !':''}</span>
     </button>`;
   }).join('');
   const cargoCards = cargo.map((c, idx) => {
@@ -875,7 +882,7 @@ function renderShelfInspector(item) {
         <button type="button" class="btn" onclick="editCargoSize(${item.uid}, '${c.id}')">Размер</button>
         <button type="button" class="btn danger icon" title="Удалить" aria-label="Удалить ${c.id}" onclick="removeCargo(${item.uid}, '${c.id}')">✕</button>
       </div>
-      ${sel?'':'<div class="cargo-card-hint">Перетащите · ← → · на чип полки</div>'}
+      ${sel?'':'<div class="cargo-card-hint">⋮⋮ перетащить · ← → · на чип полки</div>'}
     </article>`;
   }).join('');
   return `
@@ -896,11 +903,12 @@ function renderShelfInspector(item) {
       ${item.brand==='SE 750кг'?`<div class="note">Цена: стойки ${SE_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${item.shelves}× SE-140 ${seShelfUnitPrice(item.w,item.d).toLocaleString('ru-RU')} ₽ = <b>${(item.price||0).toLocaleString('ru-RU')} ₽</b></div>`:''}
       ${item.brand==='Профи-Т 2500кг'?`<div class="note">Цена: стойки ${PT_POSTS_PRICE.toLocaleString('ru-RU')} ₽ + ${item.shelves}× ярус (фанера) ${ptShelfUnitPrice(item.w,item.d).toLocaleString('ru-RU')} ₽ = <b>${(item.price||0).toLocaleString('ru-RU')} ₽</b></div>`:''}
       <div class="shelf-chip-row" role="tablist" aria-label="Полки стеллажа">${shelfChips}</div>
+      <div class="note" aria-label="Расстояния между полками">${item.shelfZs.map((_, i) => `№${i + 1}: ${Math.round(shelfClearance(item, i) / 10)} см`).join(' · ')}</div>
       <div class="shelf-active">
         <label class="inspector-row">Высота полки ${active + 1}, мм от низа
           <input type="number" aria-label="shelf-z-${active}" min="${SHELF_PLATE}" max="${item.h - SHELF_PLATE}" step="${shelfStepForBrand(item.brand)}" value="${item.shelfZs[active]}" onchange="setShelfZ(${item.uid}, ${active}, this.value)">
         </label>
-        <div class="note">Просвет: <b>${clear} мм</b> · ширина занята <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':(item.brand==='Профи-Т 2500кг'?' · шаг 45 мм':'')}</div>
+        <div class="note">Между полками: <b>${Math.round(clear/10)} см</b> (${clear} мм просвет) · ширина <b>${used}</b> / ${item.w} мм${item.brand==='SE 750кг'?' · шаг 25 мм':(item.brand==='Профи-Т 2500кг'?' · шаг 45 мм':'')}</div>
         <div class="shelf-fill${fillOver?' over':''}" role="meter" aria-valuemin="0" aria-valuemax="${item.w}" aria-valuenow="${used}" aria-label="Занятость полки по ширине"><span style="width:${fillPct}%"></span></div>
       </div>
       <div class="cargo-list" data-rack-uid="${item.uid}">
@@ -1078,7 +1086,7 @@ function onCargoDragMove(e) {
     card?.classList.add('dragging');
     card?.setAttribute('aria-grabbed', 'true');
     document.querySelector('.cargo-list')?.classList.add('drag-active');
-    try { cargoDrag.pointerId != null && e.target?.setPointerCapture?.(cargoDrag.pointerId); } catch (_) {}
+    try { card?.setPointerCapture?.(cargoDrag.pointerId); } catch (_) {}
   }
   e.preventDefault();
   clearCargoDropMarks();
@@ -1117,6 +1125,9 @@ function onCargoDragUp() { endCargoDrag(true); }
 function startCargoDrag(e, card) {
   if (e.button != null && e.button !== 0) return;
   if (e.target.closest('button, select, input, a, .cargo-card-actions')) return;
+  // На тачскрине drag только за ручку — иначе жест скролла перехватывается карточкой.
+  const touchLike = e.pointerType === 'touch' || e.pointerType === 'pen';
+  if (touchLike && !e.target.closest('.cargo-drag-handle')) return;
   const rackUid = Number(card.getAttribute('data-rack-uid'));
   const cargoId = card.getAttribute('data-cargo-id');
   const fromIndex = Number(card.getAttribute('data-cargo-index'));
@@ -1137,7 +1148,7 @@ function startCargoDrag(e, card) {
     dropIndex: null,
     dropShelf: null
   };
-  try { card.setPointerCapture?.(e.pointerId); } catch (_) {}
+  // Не захватываем pointer сразу — иначе на телефоне блокируется скролл страницы.
   window.addEventListener('pointermove', onCargoDragMove, { passive: false });
   window.addEventListener('pointerup', onCargoDragUp);
   window.addEventListener('pointercancel', onCargoDragCancel);
