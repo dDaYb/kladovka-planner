@@ -42,10 +42,70 @@ try {
   for(const sign of [-1,1]){beam(point(sign*width*.43,20,-depth*.2),point(sign*width*.35,item.h-30,depth*.2),0xa8b7c6,18);beam(point(sign*width*.43,20,depth*.3),point(sign*width*.35,item.h*.85,depth*.2),0x71869a,12);}
   const n=Math.max(2,Math.min(12,Math.floor(item.h/270)));for(let k=1;k<n;k++){const y=k*item.h/(n+1);beam(point(-width*.36,y,0),point(width*.36,y,0),0x334155,24);}
  }
+ function cargoIdLabel(c,cw,ch,cd,faceZ=0.48){
+  const tag=document.createElement('canvas');tag.width=256;tag.height=96;const tg=tag.getContext('2d');
+  tg.fillStyle='rgba(255,255,255,0.92)';tg.fillRect(8,12,240,72);tg.fillStyle='#0f172a';tg.font='bold 36px sans-serif';tg.textAlign='center';tg.fillText(String(c.id||c.cid||''),128,58);
+  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(tag),depthTest:true,transparent:true}));
+  sprite.position.set(0,ch*0.05,cd*faceZ);sprite.scale.set(Math.min(cw*0.7,220),Math.min(ch*0.35,80),1);return sprite;
+ }
+ function drawMakpacMesh(g,c,cw,ch,cd,tint){
+  const body=new THREE.Mesh(new THREE.BoxGeometry(cw*0.96,ch*0.62,cd*0.96),new THREE.MeshStandardMaterial({color:0x111827,roughness:.55,metalness:.08}));
+  body.position.y=-ch*0.12;g.add(body);
+  const lid=new THREE.Mesh(new THREE.BoxGeometry(cw,ch*0.36,cd),new THREE.MeshStandardMaterial({color:tint,roughness:.42,metalness:.12}));
+  lid.position.y=ch*0.28;g.add(lid);
+  // Рёбра крышки Makpac
+  for(let i=-2;i<=2;i++){
+   const rib=new THREE.Mesh(new THREE.BoxGeometry(cw*0.9,ch*0.035,cd*0.08),new THREE.MeshStandardMaterial({color:tint.clone().offsetHSL(0,0,-0.08),roughness:.5}));
+   rib.position.set(0,ch*0.42,i*cd*0.14);g.add(rib);
+  }
+  // Жёлтый шильд Makita
+  const badge=document.createElement('canvas');badge.width=256;badge.height=96;const bg=badge.getContext('2d');
+  bg.fillStyle='#facc15';bg.fillRect(0,0,256,96);bg.fillStyle='#0f172a';bg.font='bold 42px sans-serif';bg.textAlign='center';bg.textBaseline='middle';bg.fillText('makita',128,48);
+  const badgeSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(badge),depthTest:true,transparent:true}));
+  badgeSprite.position.set(0,ch*0.28,cd*0.51);badgeSprite.scale.set(Math.min(cw*0.45,170),Math.min(ch*0.18,48),1);g.add(badgeSprite);
+  // Боковые защёлки
+  for(const sx of [-1,1]){
+   const latch=new THREE.Mesh(new THREE.BoxGeometry(cw*0.05,ch*0.18,cd*0.14),new THREE.MeshStandardMaterial({color:0xe2e8f0,metalness:.35,roughness:.35}));
+   latch.position.set(sx*cw*0.5,ch*0.08,0);g.add(latch);
+  }
+  // Ручка сверху
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(Math.min(cw,cd)*0.12,Math.max(6,ch*0.035),8,16,Math.PI),new THREE.MeshStandardMaterial({color:0xcbd5e1,metalness:.25,roughness:.4}));
+  handle.rotation.x=Math.PI/2;handle.position.set(0,ch*0.52,0);g.add(handle);
+  g.add(cargoIdLabel(c,cw,ch,cd,0.52));
+ }
+ function drawSuitcaseMesh(g,c,cw,ch,cd,tint){
+  const soft=String(c.modelId||'').includes('personal');
+  const shell=new THREE.Mesh(new THREE.BoxGeometry(cw*0.96,ch*0.9,cd*0.92),new THREE.MeshStandardMaterial({color:tint,roughness:soft?.7:.38,metalness:soft?0:.08}));
+  g.add(shell);
+  // Шов / молния по периметру
+  const zip=new THREE.Mesh(new THREE.BoxGeometry(cw*0.98,ch*0.04,cd*0.02),new THREE.MeshStandardMaterial({color:0x94a3b8,metalness:.4,roughness:.35}));
+  zip.position.set(0,0,cd*0.47);g.add(zip);
+  const zip2=zip.clone();zip2.position.z=-cd*0.47;g.add(zip2);
+  // Телескопическая ручка
+  const poleL=new THREE.Mesh(new THREE.CylinderGeometry(5,5,ch*0.55,8),new THREE.MeshStandardMaterial({color:0xcbd5e1,metalness:.55,roughness:.3}));
+  const poleR=poleL.clone();
+  poleL.position.set(-cw*0.12,ch*0.55,-cd*0.28);poleR.position.set(cw*0.12,ch*0.55,-cd*0.28);g.add(poleL,poleR);
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(cw*0.28,ch*0.06,cd*0.08),new THREE.MeshStandardMaterial({color:0x1e293b,roughness:.5}));
+  grip.position.set(0,ch*0.82,-cd*0.28);g.add(grip);
+  // Боковая ручка
+  const side=new THREE.Mesh(new THREE.TorusGeometry(Math.min(ch,cd)*0.12,6,6,12,Math.PI),new THREE.MeshStandardMaterial({color:0x0f172a,roughness:.45}));
+  side.rotation.z=Math.PI/2;side.position.set(cw*0.5,0,0);g.add(side);
+  // Колёса
+  const wheelMat=new THREE.MeshStandardMaterial({color:0x0f172a,roughness:.85});
+  for(const sx of [-1,1])for(const sz of [-1,1]){
+   const wh=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(10,ch*0.08),Math.max(10,ch*0.08),Math.max(12,cd*0.08),12),wheelMat);
+   wh.rotation.z=Math.PI/2;wh.position.set(sx*cw*0.32,-ch*0.48,sz*cd*0.28);g.add(wh);
+  }
+  // Логотип/панель
+  const panel=new THREE.Mesh(new THREE.BoxGeometry(cw*0.28,ch*0.22,cd*0.02),new THREE.MeshStandardMaterial({color:tint.clone().offsetHSL(0,-0.05,0.12),roughness:.5}));
+  panel.position.set(0,ch*0.05,cd*0.47);g.add(panel);
+  g.add(cargoIdLabel(c,cw,ch,cd,0.55));
+ }
  function drawCargoMesh(c,cw,ch,cd,x,y,z,selected){
   const g=new THREE.Group();g.position.set(x,y,z);contents.add(g);
   const tint=new THREE.Color(c.color||'#64748b');
-  const kind=c.kind||(String(c.modelId||'').startsWith('tire')?'tire':'box');
+  const id=String(c.modelId||'');
+  const kind=c.kind||(id.startsWith('tire')?'tire':id.startsWith('makpac_')?'makpac':(id.startsWith('bag_')||id==='suitcase')?'suitcase':'box');
   // Невидимый hitbox для клика по вещи в 3D (тор/спрайты плохо ловятся лучом).
   const hit=new THREE.Mesh(new THREE.BoxGeometry(cw,ch,cd),new THREE.MeshBasicMaterial({visible:false}));
   hit.name='cargo-hit';g.add(hit);
@@ -57,6 +117,10 @@ try {
   }else if(kind==='canister'){
    g.add(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.42,Math.min(cw,cd)*0.45,ch*0.9,16),new THREE.MeshStandardMaterial({color:tint,roughness:.55,metalness:.1})));
    g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(Math.min(cw,cd)*0.12,Math.min(cw,cd)*0.12,ch*0.18,10),new THREE.MeshStandardMaterial({color:0x334155,roughness:.4})),{position:new THREE.Vector3(0,ch*0.48,0)}));
+  }else if(kind==='makpac'){
+   drawMakpacMesh(g,c,cw,ch,cd,tint);
+  }else if(kind==='suitcase'){
+   drawSuitcaseMesh(g,c,cw,ch,cd,tint);
   }else{
    // Полупрозрачный пластиковый короб с крышкой и клипсами (Fix Price / Fimako).
    const bodyMat=new THREE.MeshStandardMaterial({color:tint,transparent:true,opacity:0.52,roughness:0.28,metalness:0.04,depthWrite:true});
@@ -65,12 +129,7 @@ try {
    const lid=new THREE.Mesh(new THREE.BoxGeometry(cw,ch*0.14,cd),lidMat);lid.position.y=ch*0.4;g.add(lid);
    const rim=new THREE.Mesh(new THREE.BoxGeometry(cw*0.98,ch*0.05,cd*0.98),new THREE.MeshStandardMaterial({color:tint.clone().offsetHSL(0,0,0.18),roughness:0.4,transparent:true,opacity:0.7}));rim.position.y=ch*0.3;g.add(rim);
    for(const sx of [-1,1]){const clip=new THREE.Mesh(new THREE.BoxGeometry(cw*0.08,ch*0.16,cd*0.06),new THREE.MeshStandardMaterial({color:0xf8fafc,roughness:0.45}));clip.position.set(sx*cw*0.28,ch*0.28,cd*0.48);g.add(clip);}
-   // Этикетка с ID
-   const tag=document.createElement('canvas');tag.width=256;tag.height=96;const tg=tag.getContext('2d');
-   tg.fillStyle='rgba(255,255,255,0.92)';tg.fillRect(8,12,240,72);tg.fillStyle='#0f172a';tg.font='bold 36px sans-serif';tg.textAlign='center';tg.fillText(String(c.id||c.cid||''),128,58);
-   const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(tag),depthTest:true,transparent:true}));
-   sprite.position.set(0,ch*0.05,cd*0.48);sprite.scale.set(Math.min(cw*0.7,220),Math.min(ch*0.35,80),1);g.add(sprite);
-   if(kind==='suitcase'){const handle=new THREE.Mesh(new THREE.TorusGeometry(cw*0.12,8,6,12,Math.PI),new THREE.MeshStandardMaterial({color:0x1e293b}));handle.rotation.x=Math.PI/2;handle.position.set(0,ch*0.5,0);g.add(handle);}
+   g.add(cargoIdLabel(c,cw,ch,cd));
   }
   if(selected){const halo=new THREE.Mesh(new THREE.BoxGeometry(cw*1.08,ch*1.08,cd*1.08),new THREE.MeshBasicMaterial({color:0x2563eb,transparent:true,opacity:0.18,depthWrite:false}));g.add(halo);}
   return hit;

@@ -20,6 +20,9 @@ assert.deepEqual(await page.evaluate(()=>{const m=CATALOG.cargo.find(x=>x.id==='
 assert.deepEqual(await page.evaluate(()=>{const m=CATALOG.cargo.find(x=>x.id==='bag_check_l');return [m.w,m.d,m.h,m.w+m.d+m.h];}),[750,500,280,1530]);
 assert.ok(await page.evaluate(()=>CATALOG.cargo.filter(m=>String(m.id).startsWith('bag_')).length>=5));
 assert.equal(await page.evaluate(()=>cargoKind('bag_cabin_55')),'suitcase');
+assert.equal(await page.evaluate(()=>cargoKind('makpac_3')),'makpac');
+assert.ok(await page.evaluate(()=>String(cargoThumbSvg(CATALOG.cargo.find(m=>m.id==='makpac_1'))).includes('makita')));
+assert.ok(await page.evaluate(()=>String(cargoThumbSvg(CATALOG.cargo.find(m=>m.id==='bag_check_l'))).includes('circle')));
 assert.equal(await page.evaluate(()=>getComputedStyle(document.body).overflowY==='hidden'||getComputedStyle(document.body).overflow==='hidden'),true);
 await page.setViewportSize({width:390,height:844});
 assert.ok(await page.evaluate(()=>{const b=getComputedStyle(document.body);return b.overflowY==='auto'||b.overflow==='auto'||b.overflowY==='scroll';}));

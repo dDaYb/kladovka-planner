@@ -217,19 +217,19 @@ CATALOG.cargo = [
   // R18: типовой легковой 225/45R18 ≈ Ø660 × ширина 225; стоит на протекторе.
   {id:'tire_r18', brand:'На полку', isCargo:true, name:'Шина R18 · Ø≈660 × 225', w:660, d:225, h:660, price:0, color:'#1f2937'},
   // Makita Makpac: база 395×295 мм, высота по типу (официальные габариты).
-  {id:'makpac_1', brand:'На полку', isCargo:true, name:'Makita Makpac тип 1 · 395×295×105', w:395, d:295, h:105, price:0, color:'#0ea5e9'},
-  {id:'makpac_2', brand:'На полку', isCargo:true, name:'Makita Makpac тип 2 · 395×295×157', w:395, d:295, h:157, price:0, color:'#0284c7'},
-  {id:'makpac_3', brand:'На полку', isCargo:true, name:'Makita Makpac тип 3 · 395×295×210', w:395, d:295, h:210, price:0, color:'#0369a1'},
-  {id:'makpac_4', brand:'На полку', isCargo:true, name:'Makita Makpac тип 4 · 395×295×315', w:395, d:295, h:315, price:0, color:'#0c4a6e'},
+  {id:'makpac_1', brand:'На полку', isCargo:true, name:'Makita Makpac тип 1 · 395×295×105', w:395, d:295, h:105, price:0, color:'#008fc5'},
+  {id:'makpac_2', brand:'На полку', isCargo:true, name:'Makita Makpac тип 2 · 395×295×157', w:395, d:295, h:157, price:0, color:'#007eb0'},
+  {id:'makpac_3', brand:'На полку', isCargo:true, name:'Makita Makpac тип 3 · 395×295×210', w:395, d:295, h:210, price:0, color:'#006e9a'},
+  {id:'makpac_4', brand:'На полку', isCargo:true, name:'Makita Makpac тип 4 · 395×295×315', w:395, d:295, h:315, price:0, color:'#005f85'},
   // Чемоданы: типовые авиационные габариты (лежат плашмя: длина×ширина×толщина).
   // Ручная кладь — частые лимиты авиакомпаний / IATA Cabin OK; багаж — сумма трёх сторон ≤158 см.
-  {id:'bag_cabin_ok', brand:'На полку', isCargo:true, name:'Ручная кладь IATA Cabin OK · 550×400×200', w:550, d:400, h:200, price:0, color:'#38bdf8'},
-  {id:'bag_cabin_55', brand:'На полку', isCargo:true, name:'Ручная кладь 55×40×23 · 550×400×230', w:550, d:400, h:230, price:0, color:'#0ea5e9'},
-  {id:'bag_cabin_56', brand:'На полку', isCargo:true, name:'Ручная кладь 56×45×25 · 560×450×250', w:560, d:450, h:250, price:0, color:'#0284c7'},
-  {id:'bag_personal', brand:'На полку', isCargo:true, name:'Личная сумка / underseat · 400×300×150', w:400, d:300, h:150, price:0, color:'#7dd3fc'},
-  {id:'bag_check_m', brand:'На полку', isCargo:true, name:'Багаж M (≤158 см) · 650×450×250', w:650, d:450, h:250, price:0, color:'#2563eb'},
-  {id:'bag_check_l', brand:'На полку', isCargo:true, name:'Багаж L (≤158 см) · 750×500×280', w:750, d:500, h:280, price:0, color:'#1d4ed8'},
-  {id:'suitcase', brand:'На полку', isCargo:true, name:'Багаж L · 750×450×280 (совместимость)', w:750, d:450, h:280, price:0, color:'#1e40af'},
+  {id:'bag_cabin_ok', brand:'На полку', isCargo:true, name:'Ручная кладь IATA Cabin OK · 550×400×200', w:550, d:400, h:200, price:0, color:'#64748b'},
+  {id:'bag_cabin_55', brand:'На полку', isCargo:true, name:'Ручная кладь 55×40×23 · 550×400×230', w:550, d:400, h:230, price:0, color:'#475569'},
+  {id:'bag_cabin_56', brand:'На полку', isCargo:true, name:'Ручная кладь 56×45×25 · 560×450×250', w:560, d:450, h:250, price:0, color:'#334155'},
+  {id:'bag_personal', brand:'На полку', isCargo:true, name:'Личная сумка / underseat · 400×300×150', w:400, d:300, h:150, price:0, color:'#94a3b8'},
+  {id:'bag_check_m', brand:'На полку', isCargo:true, name:'Багаж M (≤158 см) · 650×450×250', w:650, d:450, h:250, price:0, color:'#1e3a8a'},
+  {id:'bag_check_l', brand:'На полку', isCargo:true, name:'Багаж L (≤158 см) · 750×500×280', w:750, d:500, h:280, price:0, color:'#172554'},
+  {id:'suitcase', brand:'На полку', isCargo:true, name:'Багаж L · 750×450×280 (совместимость)', w:750, d:450, h:280, price:0, color:'#1e293b'},
   {id:'canister', brand:'На полку', isCargo:true, name:'Канистра 350×200×400', w:350, d:200, h:400, price:0, color:'#b45309'},
   {id:'custom_cargo', brand:'На полку', isCargo:true, name:'Свой предмет 400×300×300', w:400, d:300, h:300, price:0, color:'#64748b'}
 ];
@@ -281,9 +281,11 @@ let activeShelfIndex = 0; // полка выбранного стеллажа д
 let selectedCargoId = null; // id выбранной вещи на полке (строка c_N)
 
 function cargoKind(modelId) {
-  if (modelId === 'tire_r18') return 'tire';
-  if (modelId === 'suitcase' || String(modelId || '').startsWith('bag_')) return 'suitcase';
-  if (modelId === 'canister') return 'canister';
+  const id = String(modelId || '');
+  if (id === 'tire_r18') return 'tire';
+  if (id === 'suitcase' || id.startsWith('bag_')) return 'suitcase';
+  if (id.startsWith('makpac_')) return 'makpac';
+  if (id === 'canister') return 'canister';
   return 'box';
 }
 
@@ -346,8 +348,36 @@ function reindexShelfOrders(rack, shelfIndex) {
 
 function cargoThumbSvg(m) {
   const fill = m.color || '#94a3b8';
-  if (m.id === 'tire_r18' || cargoKind(m.id) === 'tire') {
+  const kind = cargoKind(m.id);
+  if (m.id === 'tire_r18' || kind === 'tire') {
     return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="#111827" stroke="#4b5563" stroke-width="2"/><circle cx="22" cy="22" r="8" fill="#e5e7eb"/><circle cx="22" cy="22" r="3" fill="#6b7280"/></svg>`;
+  }
+  if (kind === 'makpac') {
+    return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <defs><linearGradient id="mk${m.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1e293b"/><stop offset="55%" stop-color="${fill}"/><stop offset="100%" stop-color="#0f172a"/></linearGradient></defs>
+      <rect x="5" y="10" width="34" height="28" rx="3" fill="url(#mk${m.id})" stroke="#0f172a" stroke-width="1"/>
+      <rect x="7" y="12" width="30" height="8" rx="1.5" fill="#0b1220" fill-opacity=".55"/>
+      <rect x="10" y="14" width="18" height="4" rx="1" fill="#facc15"/>
+      <text x="19" y="17.5" text-anchor="middle" font-size="3.2" font-weight="700" fill="#0f172a" font-family="sans-serif">makita</text>
+      <rect x="8" y="22" width="28" height="2" fill="#94a3b8" fill-opacity=".35"/>
+      <rect x="8" y="26" width="28" height="2" fill="#94a3b8" fill-opacity=".28"/>
+      <rect x="8" y="30" width="28" height="2" fill="#94a3b8" fill-opacity=".22"/>
+      <rect x="3.5" y="18" width="3" height="8" rx="1" fill="#e2e8f0"/><rect x="37.5" y="18" width="3" height="8" rx="1" fill="#e2e8f0"/>
+      <path d="M16 8h12c1 0 2 .8 2 1.6V10H14V9.6c0-.8 1-1.6 2-1.6z" fill="#cbd5e1"/>
+    </svg>`;
+  }
+  if (kind === 'suitcase') {
+    const soft = String(m.id || '').includes('personal');
+    return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <defs><linearGradient id="bg${m.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${fill}" stop-opacity=".95"/><stop offset="100%" stop-color="#0f172a" stop-opacity=".85"/></linearGradient></defs>
+      <rect x="8" y="9" width="28" height="28" rx="${soft ? 6 : 3}" fill="url(#bg${m.id})" stroke="#0f172a" stroke-width="1"/>
+      <path d="M10 23h24" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="2 1.5" opacity=".7"/>
+      <rect x="18" y="5" width="8" height="5" rx="1" fill="#334155"/>
+      <rect x="20" y="3" width="4" height="3" rx="0.8" fill="#64748b"/>
+      <circle cx="12" cy="36" r="2.2" fill="#1e293b"/><circle cx="32" cy="36" r="2.2" fill="#1e293b"/>
+      <rect x="19" y="16" width="6" height="10" rx="1" fill="#e2e8f0" fill-opacity=".25"/>
+      <path d="M14 14h4M26 14h4" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>`;
   }
   return `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
     <rect x="6" y="12" width="32" height="26" rx="3" fill="${fill}" fill-opacity=".55" stroke="${fill}" stroke-width="1.5"/>
@@ -1871,7 +1901,7 @@ window.setShelfCount=setShelfCount;window.setShelfZ=setShelfZ;window.redistribut
 window.addCargoToRack=addCargoToRack;window.removeCargo=removeCargo;window.editCargoSize=editCargoSize;
 window.selectShelfIndex=selectShelfIndex;window.openCargoCatalog=openCargoCatalog;
 window.selectCargo=selectCargo;window.moveCargoToShelf=moveCargoToShelf;window.reorderCargo=reorderCargo;window.placeCargo=placeCargo;
-window.findCargo=findCargo;window.makeCargoInstance=makeCargoInstance;
+window.findCargo=findCargo;window.makeCargoInstance=makeCargoInstance;window.cargoKind=cargoKind;window.cargoThumbSvg=cargoThumbSvg;
 window.shelfClearance=shelfClearance;window.shelfIssues=shelfIssues;window.ensureShelfLayout=ensureShelfLayout;window.shelfWidthUsed=shelfWidthUsed;window.shelfCargo=shelfCargo;
 window.defaultShelfZs=defaultShelfZs;
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#objectMenu'))closeObjectMenu();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeObjectMenu();});window.addEventListener('resize',closeObjectMenu);
