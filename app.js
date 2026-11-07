@@ -221,7 +221,15 @@ CATALOG.cargo = [
   {id:'makpac_2', brand:'На полку', isCargo:true, name:'Makita Makpac тип 2 · 395×295×157', w:395, d:295, h:157, price:0, color:'#0284c7'},
   {id:'makpac_3', brand:'На полку', isCargo:true, name:'Makita Makpac тип 3 · 395×295×210', w:395, d:295, h:210, price:0, color:'#0369a1'},
   {id:'makpac_4', brand:'На полку', isCargo:true, name:'Makita Makpac тип 4 · 395×295×315', w:395, d:295, h:315, price:0, color:'#0c4a6e'},
-  {id:'suitcase', brand:'На полку', isCargo:true, name:'Чемодан 750×450×280', w:750, d:450, h:280, price:0, color:'#1d4ed8'},
+  // Чемоданы: типовые авиационные габариты (лежат плашмя: длина×ширина×толщина).
+  // Ручная кладь — частые лимиты авиакомпаний / IATA Cabin OK; багаж — сумма трёх сторон ≤158 см.
+  {id:'bag_cabin_ok', brand:'На полку', isCargo:true, name:'Ручная кладь IATA Cabin OK · 550×400×200', w:550, d:400, h:200, price:0, color:'#38bdf8'},
+  {id:'bag_cabin_55', brand:'На полку', isCargo:true, name:'Ручная кладь 55×40×23 · 550×400×230', w:550, d:400, h:230, price:0, color:'#0ea5e9'},
+  {id:'bag_cabin_56', brand:'На полку', isCargo:true, name:'Ручная кладь 56×45×25 · 560×450×250', w:560, d:450, h:250, price:0, color:'#0284c7'},
+  {id:'bag_personal', brand:'На полку', isCargo:true, name:'Личная сумка / underseat · 400×300×150', w:400, d:300, h:150, price:0, color:'#7dd3fc'},
+  {id:'bag_check_m', brand:'На полку', isCargo:true, name:'Багаж M (≤158 см) · 650×450×250', w:650, d:450, h:250, price:0, color:'#2563eb'},
+  {id:'bag_check_l', brand:'На полку', isCargo:true, name:'Багаж L (≤158 см) · 750×500×280', w:750, d:500, h:280, price:0, color:'#1d4ed8'},
+  {id:'suitcase', brand:'На полку', isCargo:true, name:'Багаж L · 750×450×280 (совместимость)', w:750, d:450, h:280, price:0, color:'#1e40af'},
   {id:'canister', brand:'На полку', isCargo:true, name:'Канистра 350×200×400', w:350, d:200, h:400, price:0, color:'#b45309'},
   {id:'custom_cargo', brand:'На полку', isCargo:true, name:'Свой предмет 400×300×300', w:400, d:300, h:300, price:0, color:'#64748b'}
 ];
@@ -274,7 +282,7 @@ let selectedCargoId = null; // id выбранной вещи на полке (�
 
 function cargoKind(modelId) {
   if (modelId === 'tire_r18') return 'tire';
-  if (modelId === 'suitcase') return 'suitcase';
+  if (modelId === 'suitcase' || String(modelId || '').startsWith('bag_')) return 'suitcase';
   if (modelId === 'canister') return 'canister';
   return 'box';
 }
