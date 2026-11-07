@@ -325,7 +325,7 @@ function normalizeCargo(raw, shelfN) {
     id,
     cid,
     modelId: String(raw?.modelId || 'custom_cargo').slice(0, 40),
-    kind: raw?.kind || cargoKind(raw?.modelId),
+    kind: cargoKind(raw?.modelId) || raw?.kind || 'box',
     name: String(raw?.name || 'Предмет').slice(0, 80),
     w: Number(raw.w),
     d: Number(raw.d),
